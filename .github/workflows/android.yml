@@ -1,0 +1,43 @@
+# Build the Browser MCP Android APK, free, on GitHub Actions.
+# Runs on push and by hand. No card, no paid service, public repo free tier.
+# The APK is the deliverable, the owner installs it directly on his phone.
+# No Google Play, Play charges a 25 dollar one time developer fee.
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          # No gradlew wrapper in this repo, so Gradle comes from here.
+          # AGP 8.5.2 needs Gradle 8.7 or newer.
+          gradle-version: "8.7"
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-mcp-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.3.0-${{ github.run_number }}
+          name: Browser MCP v0.3.0 build ${{ github.run_number }}
+          body: Browser MCP Android app, debug APK. Install directly on the phone, open the app, turn MCP on, then log in by hand inside it.
+          files: app/build/outputs/apk/debug/app-debug.apk
