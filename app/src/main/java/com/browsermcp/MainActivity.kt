@@ -1,11 +1,15 @@
 package com.browsermcp
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.Settings
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
@@ -28,20 +32,29 @@ import kotlin.concurrent.thread
 import kotlin.random.Random
 
 /**
- * Browser MCP, Android app, version 0.3.0.
+ * Browser MCP, Android app, version 0.4.0.
  *
- * A WebView browser the owner opens himself. Muse drives it through the
- * built-in MCP server on 127.0.0.1 only, with a bearer token, when the
- * owner turns MCP on in the app. The owner sees everything on this screen
- * and can take over at any time with his own hands.
+ * Two engines in one app:
+ * 1. A WebView browser the owner opens himself. Muse drives it through
+ *    the built-in MCP server on 127.0.0.1 only, with a bearer token,
+ *    when the owner turns MCP on in the app. The owner sees everything
+ *    on this screen and can take over at any time with his own hands.
+ *    The WebView is a fallback only: exchanges detect it, so it is
+ *    not the primary for real logins.
+ * 2. A drive engine, DriveService, an AccessibilityService that drives
+ *    the REAL apps on the phone: real Chrome, KuCoin, Bitget, any app
+ *    the owner picks. The owner picks one target app in this UI and
+ *    turns the service on by hand in Settings, Accessibility. That is
+ *    how Muse drives HIS browser on HIS phone: no cloud browser, no
+ *    laptop, no extension.
  *
  * Browser must not think it is a coding agent:
  * - No automation flags. WebView has no --enable-automation to set.
  * - User agent is real Chrome, the wv token is removed, so the page sees
  *   a normal Chrome browser, not a WebView. Note: WebView is still
  *   detectable by other signals, X-Requested-With header and missing
- *   window.chrome, so it is a fallback only. Real Chrome, attached to,
- *   is primary for exchanges that check.
+ *   window.chrome, so it is a fallback only. Real Chrome, driven by the
+ *   AccessibilityService, is primary for exchanges that check.
  * - Human timing: small random pause before every action, slow typing,
  *   scroll in steps. No bulk, no instant fills.
  * - WebView debugging is OFF until the owner turns MCP on, and only then,
@@ -52,6 +65,11 @@ class MainActivity : Activity() {
 
     lateinit var webView: WebView
     private lateinit var statusBar: TextView
+    private lateinit var targetAppLabel: TextView
+    private lateinit var a11yStatus: TextView
+    private lateinit var tunnelUrlBar: EditText
+    private lateinit var tunnelStatus: TextView
+    private lateinit var prefs: SharedPreferences
     private var fileChooser: ValueCallback<Array<Uri>>? = null
     private var mcpServer: McpServer? = null
     private var token: String = UUID.randomUUID().toString()
@@ -62,11 +80,19 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        prefs = getSharedPreferences(DriveService.PREFS, MODE_PRIVATE)
         webView = findViewById(R.id.webView)
         statusBar = findViewById(R.id.statusBar)
+        targetAppLabel = findViewById(R.id.targetAppLabel)
+        a11yStatus = findViewById(R.id.a11yStatus)
+        tunnelUrlBar = findViewById(R.id.tunnelUrlBar)
+        tunnelStatus = findViewById(R.id.tunnelStatus)
         val urlBar = findViewById<EditText>(R.id.urlBar)
         val goButton = findViewById<Button>(R.id.goButton)
         val mcpButton = findViewById<Button>(R.id.mcpButton)
+        val pickTargetButton = findViewById<Button>(R.id.pickTargetButton)
+        val a11yButton = findViewById<Button>(R.id.a11yButton)
+        val tunnelSaveButton = findViewById<Button>(R.id.tunnelSaveButton)
 
         val settings: WebSettings = webView.settings
         settings.javaScriptEnabled = true
@@ -130,7 +156,25 @@ class MainActivity : Activity() {
             mcpButton.text = if (mcpOn) "MCP on" else "MCP off"
         }
 
+        pickTargetButton.setOnClickListener { showAppPicker() }
+
+        a11yButton.setOnClickListener { openA11ySettings() }
+
+        tunnelSaveButton.setOnClickListener {
+            val url = tunnelUrlBar.text.toString().trim()
+            prefs.edit().putString(KEY_TUNNEL_URL, url).apply()
+            updateDriveStatus()
+            status("Tunnel URL saved: $url")
+        }
+
+        updateDriveStatus()
         webView.loadUrl("https://example.com")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // The owner may have toggled the service in Settings. Refresh.
+        updateDriveStatus()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -154,6 +198,14 @@ class MainActivity : Activity() {
         WebView.setWebContentsDebuggingEnabled(true)
         mcpServer = McpServer(this, token).also { it.start() }
         mcpOn = true
+        // Keep the process alive while MCP is on, so the server keeps
+        // answering while the owner uses the target app in front.
+        val keepAlive = Intent(this, KeepAliveService::class.java)
+        if (Build.VERSION.SDK_INT >= 26) {
+            startForegroundService(keepAlive)
+        } else {
+            startService(keepAlive)
+        }
         status("MCP on. Local only: http://127.0.0.1:8765/mcp  Token: $token")
         Toast.makeText(this, "MCP on. Token shown in status.", Toast.LENGTH_LONG).show()
     }
@@ -163,6 +215,7 @@ class MainActivity : Activity() {
         mcpServer = null
         WebView.setWebContentsDebuggingEnabled(false)
         mcpOn = false
+        stopService(Intent(this, KeepAliveService::class.java))
         status("MCP off.")
     }
 
@@ -172,6 +225,73 @@ class MainActivity : Activity() {
     }
 
     fun currentToken(): String = token
+
+    // ---- Target app picker, Accessibility settings, tunnel URL ----
+
+    /**
+     * The owner picks ONE app Muse may drive. Only launchable apps are
+     * listed, so no special package permission is needed. The choice is
+     * saved and can be changed any time by picking again.
+     */
+    private fun showAppPicker() {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(intent, 0)
+            .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Pick the app Muse may drive")
+            .setItems(labels) { _, which ->
+                val info = apps[which]
+                val pkg = info.activityInfo.packageName
+                prefs.edit()
+                    .putString(DriveService.KEY_TARGET_PACKAGE, pkg)
+                    .putString(DriveService.KEY_TARGET_LABEL, labels[which])
+                    .apply()
+                updateDriveStatus()
+                status("Target app: " + labels[which])
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Open Accessibility settings so the owner can turn the service on by hand. */
+    private fun openA11ySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        Toast.makeText(
+            this,
+            "Turn on Browser MCP in Accessibility, then come back.",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun updateDriveStatus() {
+        val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
+        val pkg = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
+        targetAppLabel.text = if (target.isEmpty()) {
+            "None picked"
+        } else {
+            "$target ($pkg)"
+        }
+        val on = DriveService.instance != null
+        a11yStatus.text = if (on) {
+            "Accessibility: ON. Driving: " + if (target.isEmpty()) {
+                "no app picked yet."
+            } else {
+                "$target."
+            }
+        } else {
+            "Accessibility: OFF. Tap Accessibility to turn it on in Settings."
+        }
+        val url = prefs.getString(KEY_TUNNEL_URL, "") ?: ""
+        tunnelStatus.text = if (url.isEmpty()) {
+            "Tunnel: not set up yet. MCP is local only (127.0.0.1:8765)."
+        } else {
+            "Tunnel URL: $url"
+        }
+        if (tunnelUrlBar.text.toString().isEmpty() && url.isNotEmpty()) {
+            tunnelUrlBar.setText(url)
+        }
+    }
 
     // ---- Human like helpers ----
 
@@ -217,7 +337,7 @@ class MainActivity : Activity() {
         return path.get()
     }
 
-    // ---- The 12 tools, same as the desktop MCP server ----
+    // ---- The 12 WebView tools, same as the desktop MCP server ----
 
     fun navigate(url: String): Map<String, String> {
         pause()
@@ -312,6 +432,38 @@ class MainActivity : Activity() {
         return mapOf("raw" to result, "looks_human" to looksHuman)
     }
 
+    // ---- The 12 drive tools, real apps via DriveService ----
+
+    private fun drive(): DriveService =
+        DriveService.instance
+            ?: throw RuntimeException("Accessibility service is off. Turn it on in Settings, Accessibility, Browser MCP.")
+
+    fun driveTapText(text: String): Map<String, Any> = drive().tapText(text)
+
+    fun driveTapCoords(x: Int, y: Int): Map<String, Any> = drive().tapCoords(x, y)
+
+    fun driveTypeText(field: String, text: String): Map<String, Any> = drive().typeText(field, text)
+
+    fun driveScroll(direction: String, steps: Int): Map<String, Any> = drive().scroll(direction, steps)
+
+    fun driveSwipe(x1: Int, y1: Int, x2: Int, y2: Int, ms: Int): Map<String, Any> =
+        drive().swipe(x1, y1, x2, y2, ms)
+
+    fun driveScreenshot(): String = drive().screenshot()
+
+    fun driveScreenText(): Map<String, Any> = drive().screenText()
+
+    fun driveOpenApp(packageName: String): Map<String, Any> = drive().openApp(packageName)
+
+    fun driveOpenUrl(url: String): Map<String, Any> = drive().openUrl(url)
+
+    fun drivePressBack(): Map<String, Any> = drive().pressBack()
+
+    fun drivePressHome(): Map<String, Any> = drive().pressHome()
+
+    fun driveWaitForOwner(marker: String, timeoutSeconds: Int): Map<String, Any> =
+        drive().waitForOwner(marker, timeoutSeconds)
+
     private fun json(s: String): String {
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
     }
@@ -319,5 +471,9 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         stopMcp()
         super.onDestroy()
+    }
+
+    companion object {
+        const val KEY_TUNNEL_URL = "tunnel_url"
     }
 }
