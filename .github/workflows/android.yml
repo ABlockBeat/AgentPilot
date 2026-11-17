@@ -21,6 +21,13 @@ jobs:
           distribution: temurin
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action's default package list asks sdkmanager for the
+          # obsolete "tools" package, which no longer exists in the SDK
+          # repositories and fails the run. Install only packages that
+          # exist: platform-tools, build-tools 34 and platform 34,
+          # which is what AGP 8.5.2 with compileSdk 34 needs.
+          packages: platform-tools build-tools;34.0.0 platforms;android-34
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
