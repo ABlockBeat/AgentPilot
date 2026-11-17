@@ -1,0 +1,37 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.browsermcp"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.browsermcp"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "0.3.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    // No external dependencies. Only Android SDK and org.json, which is
+    // bundled in Android. Free, nothing to download, nothing paid.
+}
