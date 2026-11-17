@@ -36,7 +36,73 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:padding="8dp"
-        android:text="MCP off. Turn it on to let Muse drive this browser." />
+        android:text="MCP off. Turn it on to let your agent drive this browser." />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Target app: " />
+
+        <TextView
+            android:id="@+id/targetAppLabel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="None picked" />
+
+        <Button
+            android:id="@+id/pickTargetButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Pick app" />
+
+        <Button
+            android:id="@+id/a11yButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Accessibility" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/a11yStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp"
+        android:text="Accessibility: OFF. Tap Accessibility to turn it on in Settings." />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <EditText
+            android:id="@+id/tunnelUrlBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Tunnel URL, e.g. https://xxx.trycloudflare.com"
+            android:inputType="textUri" />
+
+        <Button
+            android:id="@+id/tunnelSaveButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tunnelStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp"
+        android:text="Tunnel: not set up yet. MCP is local only." />
 
     <WebView
         android:id="@+id/webView"
