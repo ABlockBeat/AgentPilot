@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Browser MCP drive engine, version 0.4.0.
+     The service drives the one app the owner picks. It reads the screen
+     to find buttons and fields, taps and types in them, and takes
+     screenshots. It never reads or types passwords. The owner turns it
+     on by hand in Settings, Accessibility, and can turn it off any time.
+     Do NOT add flagRequestTouchExplorationMode: that would change how
+     the owner's own touches behave. Do NOT add flagRequestFilterKeyEvents. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
+    android:description="@string/accessibility_service_description"
+    android:settingsActivity="com.browsermcp.MainActivity" />
