@@ -451,7 +451,8 @@ class DriveService : AccessibilityService() {
                 override fun onCancelled(gestureDescription: GestureDescription) {
                     latch.countDown()
                 }
-            }
+            },
+            null
         )
         latch.await(10, TimeUnit.SECONDS)
         return ok.get()
@@ -469,7 +470,7 @@ class DriveService : AccessibilityService() {
         takeScreenshot(
             Display.DEFAULT_DISPLAY,
             { cmd -> Handler(Looper.getMainLooper()).post(cmd) },
-            object : TakeScreenshotCallback() {
+            object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
                     try {
                         val buffer = result.hardwareBuffer
