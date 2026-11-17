@@ -35,7 +35,7 @@ import kotlin.random.Random
  * Browser MCP, Android app, version 0.4.0.
  *
  * Two engines in one app:
- * 1. A WebView browser the owner opens himself. Muse drives it through
+ * 1. A WebView browser the owner opens himself. Your agent drives it through
  *    the built-in MCP server on 127.0.0.1 only, with a bearer token,
  *    when the owner turns MCP on in the app. The owner sees everything
  *    on this screen and can take over at any time with his own hands.
@@ -45,7 +45,7 @@ import kotlin.random.Random
  *    the REAL apps on the phone: real Chrome, KuCoin, Bitget, any app
  *    the owner picks. The owner picks one target app in this UI and
  *    turns the service on by hand in Settings, Accessibility. That is
- *    how Muse drives HIS browser on HIS phone: no cloud browser, no
+ *    how your agent drives your browser on your phone: no cloud browser, no
  *    laptop, no extension.
  *
  * Browser must not think it is a coding agent:
@@ -229,7 +229,7 @@ class MainActivity : Activity() {
     // ---- Target app picker, Accessibility settings, tunnel URL ----
 
     /**
-     * The owner picks ONE app Muse may drive. Only launchable apps are
+     * The owner picks ONE app your agent may drive. Only launchable apps are
      * listed, so no special package permission is needed. The choice is
      * saved and can be changed any time by picking again.
      */
@@ -239,7 +239,7 @@ class MainActivity : Activity() {
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
         val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("Pick the app Muse may drive")
+            .setTitle("Pick the app your agent may drive")
             .setItems(labels) { _, which ->
                 val info = apps[which]
                 val pkg = info.activityInfo.packageName
