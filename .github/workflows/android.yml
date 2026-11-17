@@ -48,7 +48,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.0-${{ github.run_number }}
-          name: Browser MCP v0.3.0 build ${{ github.run_number }}
-          body: Browser MCP Android app, debug APK. Install directly on the phone, open the app, turn MCP on, then log in by hand inside it.
+          tag_name: v0.4.0-${{ github.run_number }}
+          name: Browser MCP v0.4.0 build ${{ github.run_number }}
+          body: Browser MCP Android app, debug APK. New in 0.4.0: the drive engine, an AccessibilityService that drives the real apps on the phone (real Chrome, KuCoin, Bitget, the one app the owner picks). Install directly on the phone, pick the target app, turn Accessibility on by hand in Settings, turn MCP on, then log in by hand inside the real app.
           files: app/build/outputs/apk/debug/app-debug.apk
