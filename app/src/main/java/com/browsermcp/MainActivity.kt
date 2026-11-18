@@ -8,8 +8,16 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.TextUtils
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.BaseAdapter
 import android.widget.Button
+import android.widget.GridView
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -185,33 +193,76 @@ class MainActivity : Activity() {
     // ---- Target app picker and Accessibility settings ----
 
     /**
-     * The owner picks ONE app your agent may drive. Only launchable apps are
-     * listed. Android 11 and newer hide most installed apps from
-     * queryIntentActivities unless QUERY_ALL_PACKAGES is declared in the
-     * manifest, so that permission is declared there. The app itself is
-     * never listed, it cannot drive itself. The choice is saved and can
-     * be changed any time by picking again.
+     * The owner picks ONE app your agent may drive. The picker is a
+     * grid, 3 apps in a row, each with its official icon and name, so
+     * the list is short and there is little scrolling. Only launchable
+     * apps are listed. Android 11 and newer hide most installed apps
+     * from queryIntentActivities unless QUERY_ALL_PACKAGES is declared
+     * in the manifest, so that permission is declared there. The app
+     * itself is never listed, it cannot drive itself. The choice is
+     * saved and can be changed any time by picking again.
      */
     private fun showAppPicker() {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(intent, 0)
             .filter { it.activityInfo.packageName != packageName }
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
-        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
-        AlertDialog.Builder(this)
+        val density = resources.displayMetrics.density
+        val dp = { v: Int -> (v * density).toInt() }
+        val grid = GridView(this).apply {
+            numColumns = 3
+            horizontalSpacing = dp(12)
+            verticalSpacing = dp(12)
+            stretchMode = GridView.STRETCH_COLUMN_WIDTH
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            clipToPadding = false
+        }
+        grid.adapter = object : BaseAdapter() {
+            override fun getCount(): Int = apps.size
+            override fun getItem(position: Int): Any = apps[position]
+            override fun getItemId(position: Int): Long = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val cell = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    setPadding(dp(4), dp(8), dp(4), dp(8))
+                }
+                val icon = ImageView(this@MainActivity).apply {
+                    // The official icon of the app, from the phone itself.
+                    setImageDrawable(apps[position].loadIcon(packageManager))
+                    layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
+                }
+                val label = TextView(this@MainActivity).apply {
+                    text = apps[position].loadLabel(packageManager).toString()
+                    gravity = Gravity.CENTER
+                    textSize = 13f
+                    maxLines = 2
+                    ellipsize = TextUtils.TruncateAt.END
+                }
+                cell.addView(icon)
+                cell.addView(label)
+                return cell
+            }
+        }
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Pick the app your agent may drive")
-            .setItems(labels) { _, which ->
+            .setView(grid)
+            .setNegativeButton("Cancel", null)
+            .create()
+        grid.onItemClickListener =
+            AdapterView.OnItemClickListener { _, _, which, _ ->
                 val info = apps[which]
                 val pkg = info.activityInfo.packageName
+                val label = info.loadLabel(packageManager).toString()
                 prefs.edit()
                     .putString(DriveService.KEY_TARGET_PACKAGE, pkg)
-                    .putString(DriveService.KEY_TARGET_LABEL, labels[which])
+                    .putString(DriveService.KEY_TARGET_LABEL, label)
                     .apply()
                 updateDriveStatus()
-                status("Target app: " + labels[which])
+                status("Target app: $label")
+                dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        dialog.show()
     }
 
     /** Open Accessibility settings so the owner can turn the service on by hand. */
