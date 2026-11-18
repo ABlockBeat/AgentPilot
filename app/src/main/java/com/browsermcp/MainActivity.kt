@@ -17,6 +17,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -38,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.8.
+ * AgentPilot, Android app, version 0.6.9.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -289,6 +290,10 @@ class MainActivity : Activity() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
         val a11yOn = DriveService.instance != null
         val running = sessionRunning()
+        // Diagnostic only: the UI test kept showing "Accessibility
+        // off" while the system said the service was bound. This line
+        // proves, in the test log, what the home screen saw and when.
+        Log.i("AgentPilot", "updateUi target=$target a11yOn=$a11yOn running=$running")
         when {
             target.isEmpty() -> {
                 statusText.text = "Not set up"
