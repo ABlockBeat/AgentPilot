@@ -96,7 +96,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.7-${{ github.run_number }}
-          name: AgentPilot v0.6.7 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.7: a second tunnel, ngrok, for phones where Cloudflare does not start (free account, paste the key once in Help); a floating window option that shows the connection over other apps; and the tunnel's last message in Help, so a failure says why."
+          tag_name: v0.6.8-${{ github.run_number }}
+          name: AgentPilot v0.6.8 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.8: a Copy button next to Share, it copies the link and the key together with one tap, for phones where the share sheet does not work."
           files: app/build/outputs/apk/debug/app-debug.apk
