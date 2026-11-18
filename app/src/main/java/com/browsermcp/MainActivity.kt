@@ -770,7 +770,7 @@ class MainActivity : Activity() {
     private fun checkForUpdate() {
         thread {
             try {
-                val conn = URL("https://api.github.com/repos/ranabdullah1065-blip/AgentPilot/releases/latest").openConnection() as HttpURLConnection
+                val conn = URL("https://api.github.com/repos/ABlockBeat/AgentPilot/releases/latest").openConnection() as HttpURLConnection
                 conn.connectTimeout = 8000
                 conn.readTimeout = 8000
                 conn.setRequestProperty("User-Agent", "AgentPilot")
