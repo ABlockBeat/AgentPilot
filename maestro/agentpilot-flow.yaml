@@ -79,7 +79,15 @@ name: AgentPilot UI test
     timeout: 60000
 - tapOn:
     text: "^Start$"
-- assertVisible: "Running"
+# UI Test #84: the tap works now (a11yOn=true from the Settings
+# check, session running=true 0.4s later), but the plain "Running"
+# assert failed. The status line reads "Chrome · Running" in one
+# TextView, and the assert runs before the UI refreshes, so wait
+# for the word to appear instead of asserting it at once.
+- extendedWaitUntil:
+    visible:
+      text: ".*Running.*"
+    timeout: 15000
 - takeScreenshot: home-running
 
 # Part 3: the tunnel link. The tunnel starts by itself with the
