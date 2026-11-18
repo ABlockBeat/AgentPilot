@@ -11,19 +11,15 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, local only, version 0.4.0.
+ * Built-in MCP server, streamable HTTP, local only, version 0.4.4.
  *
  * Binds 127.0.0.1 port 8765 only, never 0.0.0.0, never reachable off the
  * phone. Every request needs Authorization: Bearer <token>. The token is
  * generated in the app, shown once in the app, regenerated in the app.
- * 24 tools: the 12 WebView tools from 0.3.0, plus 12 drive tools that
- * drive the REAL apps on the phone through DriveService.
- *
- * The drive tools are named drive_* on purpose. The WebView tools
- * already own the short names type_text, scroll, screenshot and
- * wait_for_owner, and two tools with the same name in one server is
- * broken. drive_* means "drive the real target app", the plain name
- * means "the WebView browser in this app".
+ * 12 tools only: the drive tools that drive the REAL apps on the phone
+ * through DriveService. The in-app WebView browser and its 12 tools are
+ * gone: that was an option that did not do the real work, exchanges
+ * detect a WebView and block logins, so only what works stays.
  *
  * No password is ever filled, no credential file is ever uploaded.
  * The drive tools refuse password fields outright, and FLAG_SECURE
@@ -120,7 +116,7 @@ class McpServer(private val activity: MainActivity, private val token: String) {
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "browser-mcp").put("version", "0.4.0"))
+                    .put("serverInfo", JSONObject().put("name", "browser-mcp").put("version", "0.4.4"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")
@@ -144,22 +140,9 @@ class McpServer(private val activity: MainActivity, private val token: String) {
 
     private fun toolsList(): JSONArray {
         val list = JSONArray()
-        // The 12 WebView tools, same as 0.3.0.
-        list.put(tool("navigate", "Go to a URL.", JSONObject().put("url", str()), JSONArray().put("url")))
-        list.put(tool("get_page", "Read the current page.", JSONObject(), JSONArray()))
-        list.put(tool("click_text", "Click the first element with this text.", JSONObject().put("text", str()), JSONArray().put("text")))
-        list.put(tool("type_text", "Type slowly into a field. Never a password field.", JSONObject().put("field", str()).put("text", str()), JSONArray().put("field").put("text")))
-        list.put(tool("scroll", "Scroll in steps.", JSONObject().put("direction", str()).put("steps", num()), JSONArray()))
-        list.put(tool("screenshot", "Save a screenshot.", JSONObject(), JSONArray()))
-        list.put(tool("wait_for_login", "Pause while the owner logs in by hand.", JSONObject().put("marker", str()).put("timeout_seconds", num()), JSONArray().put("marker")))
-        list.put(tool("wait_for_owner", "Pause while the owner does a step by hand.", JSONObject().put("marker", str()).put("timeout_seconds", num()), JSONArray().put("marker")))
-        list.put(tool("upload_file", "Choose a file the owner named.", JSONObject().put("field", str()).put("file_path", str()), JSONArray().put("file_path")))
-        list.put(tool("download_by_text", "Click a link and save the download.", JSONObject().put("text", str()), JSONArray().put("text")))
-        list.put(tool("close", "Close the browser, keep the profile.", JSONObject(), JSONArray()))
-        list.put(tool("check_human", "Self check: does this browser look like a coding agent?", JSONObject(), JSONArray()))
-        // The 12 drive tools, new in 0.4.0. They drive the REAL target
-        // app on the phone through the AccessibilityService. Only the
-        // one app the owner picked, plus system Back and Home.
+        // The 12 drive tools. They drive the REAL target app on the
+        // phone through the AccessibilityService. Only the one app the
+        // owner picked, plus system Back and Home.
         list.put(tool("drive_tap_text", "Tap the first tappable text in the target app.", JSONObject().put("text", str()), JSONArray().put("text")))
         list.put(tool("drive_tap_coords", "Tap a point on the screen in the target app.", JSONObject().put("x", num()).put("y", num()), JSONArray().put("x").put("y")))
         list.put(tool("drive_type_text", "Type into a field in the target app. Never a password field.", JSONObject().put("field", str()).put("text", str()), JSONArray().put("field").put("text")))
@@ -179,18 +162,6 @@ class McpServer(private val activity: MainActivity, private val token: String) {
         val name = params.getString("name")
         val args = params.optJSONObject("arguments") ?: JSONObject()
         val result: Any = when (name) {
-            "navigate" -> activity.navigate(args.getString("url"))
-            "get_page" -> activity.getPage()
-            "click_text" -> activity.clickText(args.getString("text"))
-            "type_text" -> activity.typeText(args.getString("field"), args.getString("text"))
-            "scroll" -> activity.scroll(args.optString("direction", "down"), args.optInt("steps", 3))
-            "screenshot" -> mapOf("path" to activity.screenshot())
-            "wait_for_login" -> activity.waitFor(args.getString("marker"), args.optInt("timeout_seconds", 120))
-            "wait_for_owner" -> activity.waitFor(args.getString("marker"), args.optInt("timeout_seconds", 300))
-            "upload_file" -> activity.uploadFile(args.optString("field", ""), args.getString("file_path"))
-            "download_by_text" -> activity.downloadByText(args.getString("text"))
-            "close" -> { activity.runOnUiThread { activity.finish() }; mapOf("ok" to true) }
-            "check_human" -> activity.checkHuman()
             "drive_tap_text" -> activity.driveTapText(args.getString("text"))
             "drive_tap_coords" -> activity.driveTapCoords(args.optInt("x", 0), args.optInt("y", 0))
             "drive_type_text" -> activity.driveTypeText(args.getString("field"), args.getString("text"))
