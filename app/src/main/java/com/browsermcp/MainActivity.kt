@@ -4,8 +4,6 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -30,7 +28,11 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.4.6.
+ * AgentPilot, Android app, version 0.4.8.
+ *
+ * Minimal interface, one rule only: one status line and one
+ * button. Nothing else on the screen. The button always does
+ * the next step: set up, turn on Accessibility, start, stop.
  *
  * One engine only: DriveService, an AccessibilityService that drives
  * the REAL apps on the phone, the ones the owner already uses and is
@@ -60,10 +62,9 @@ import org.json.JSONObject
  */
 class MainActivity : Activity() {
 
-    private lateinit var appStatus: TextView
-    private lateinit var mcpStatus: TextView
-    private lateinit var a11yStatus: TextView
-    private lateinit var mcpButton: Button
+    private lateinit var statusDot: View
+    private lateinit var statusText: TextView
+    private lateinit var actionButton: Button
     private lateinit var updateButton: Button
     private var updateDownloadUrl: String = ""
     private lateinit var prefs: SharedPreferences
@@ -77,29 +78,18 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         prefs = getSharedPreferences(DriveService.PREFS, MODE_PRIVATE)
-        appStatus = findViewById(R.id.appStatus)
-        mcpStatus = findViewById(R.id.mcpStatus)
-        a11yStatus = findViewById(R.id.a11yStatus)
-        mcpButton = findViewById(R.id.mcpButton)
+        statusDot = findViewById(R.id.statusDot)
+        statusText = findViewById(R.id.statusText)
+        actionButton = findViewById(R.id.actionButton)
         updateButton = findViewById(R.id.updateButton)
-        val pickTargetButton = findViewById<Button>(R.id.pickTargetButton)
-        val a11yButton = findViewById<Button>(R.id.a11yButton)
 
-        mcpButton.setOnClickListener {
-            if (mcpOn) stopMcp() else startMcp()
-            updateMcpUi()
-        }
-
-        pickTargetButton.setOnClickListener { showAppPicker() }
-
-        a11yButton.setOnClickListener { openA11ySettings() }
+        actionButton.setOnClickListener { doNextStep() }
 
         updateButton.setOnClickListener {
             if (updateDownloadUrl.isNotEmpty()) downloadUpdate(updateDownloadUrl)
         }
 
-        updateDriveStatus()
-        updateMcpUi()
+        updateUi()
         maybeAutoStartMcp()
         checkForUpdate()
     }
@@ -107,8 +97,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // The owner may have toggled the service in Settings. Refresh.
-        updateDriveStatus()
-        updateMcpUi()
+        updateUi()
     }
 
     fun status(text: String) {
@@ -126,8 +115,7 @@ class MainActivity : Activity() {
         } else {
             startService(keepAlive)
         }
-        updateMcpUi()
-        status("MCP on")
+        updateUi()
     }
 
     private fun stopMcp() {
@@ -135,24 +123,54 @@ class MainActivity : Activity() {
         mcpServer = null
         mcpOn = false
         stopService(Intent(this, KeepAliveService::class.java))
-        updateMcpUi()
-        status("MCP off")
+        updateUi()
     }
 
-    /** One place for the MCP button and status line, so they never disagree. */
-    private fun updateMcpUi() {
-        if (mcpOn) {
-            mcpStatus.text = "MCP: ON"
-            mcpStatus.setTextColor(getColor(R.color.accent))
-            mcpButton.text = "MCP on"
-            mcpButton.setBackgroundResource(R.drawable.rounded_button)
-            mcpButton.setTextColor(getColor(R.color.white))
-        } else {
-            mcpStatus.text = "MCP: OFF"
-            mcpStatus.setTextColor(getColor(R.color.secondary))
-            mcpButton.text = "MCP off"
-            mcpButton.setBackgroundResource(R.drawable.rounded_button_outline)
-            mcpButton.setTextColor(getColor(R.color.accent))
+    /**
+     * One status line and one button, the whole interface. The
+     * button always does the next step, so there is nothing to
+     * figure out: set up, turn on Accessibility, start, stop.
+     */
+    private fun updateUi() {
+        val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
+        val a11yOn = DriveService.instance != null
+        when {
+            target.isEmpty() -> {
+                statusText.text = "Not set up"
+                statusText.setTextColor(getColor(R.color.secondary))
+                statusDot.setBackgroundResource(R.drawable.dot_amber)
+                actionButton.text = "Set up"
+            }
+            !a11yOn -> {
+                statusText.text = "$target · Accessibility off"
+                statusText.setTextColor(getColor(R.color.secondary))
+                statusDot.setBackgroundResource(R.drawable.dot_amber)
+                actionButton.text = "Turn on Accessibility"
+            }
+            mcpOn -> {
+                statusText.text = "$target · Running"
+                statusText.setTextColor(getColor(R.color.accent))
+                statusDot.setBackgroundResource(R.drawable.dot_green)
+                actionButton.text = "Stop"
+            }
+            else -> {
+                statusText.text = "$target · Ready"
+                statusText.setTextColor(getColor(R.color.accent))
+                statusDot.setBackgroundResource(R.drawable.dot_green)
+                actionButton.text = "Start"
+            }
+        }
+    }
+
+    /** The one button does whatever the next step is. */
+    private fun doNextStep() {
+        val target = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
+        val a11yOn = DriveService.instance != null
+        when {
+            target.isEmpty() -> showAppPicker()
+            !a11yOn -> openA11ySettings()
+            mcpOn -> stopMcp()
+            else -> startMcp()
         }
     }
 
@@ -174,13 +192,13 @@ class MainActivity : Activity() {
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 if (!mcpOn && DriveService.instance != null) {
                     startMcp()
-                    updateMcpUi()
+                    updateUi()
                 }
             }, 1500)
             return
         }
         startMcp()
-        updateMcpUi()
+        updateUi()
     }
 
     fun regenerateToken(): String {
@@ -201,14 +219,13 @@ class MainActivity : Activity() {
      * are actually installed. No crypto apps are listed at all, by
      * the owner's order. If none of them is installed, every
      * launchable app is shown instead so the picker is never empty.
-     * Tap an app to select it, it gets highlighted, then tap SELECT
-     * to confirm. SELECT stays off until an app is chosen. CANCEL
-     * only closes the picker without changing anything.
-     * Android 11 and newer hide most installed apps from
-     * queryIntentActivities unless QUERY_ALL_PACKAGES is declared in
-     * the manifest, so that permission is declared there. The app
-     * itself is never listed, it cannot drive itself. The choice is
-     * saved and can be changed any time by picking again.
+     * Tap an app and it is picked at once, the picker closes, no
+     * extra button to tap. Android 11 and newer hide most installed
+     * apps from queryIntentActivities unless QUERY_ALL_PACKAGES is
+     * declared in the manifest, so that permission is declared
+     * there. The app itself is never listed, it cannot drive
+     * itself. The choice is saved and can be changed any time by
+     * picking again.
      */
     private fun showAppPicker() {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
@@ -231,20 +248,7 @@ class MainActivity : Activity() {
         }
         val density = resources.displayMetrics.density
         val dp = { v: Int -> (v * density).toInt() }
-        var selected = -1
         lateinit var dialog: AlertDialog
-        fun highlightBackground(isSelected: Boolean): GradientDrawable =
-            GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(16).toFloat()
-                if (isSelected) {
-                    setColor(0xFFE0F2F1.toInt())
-                    setStroke(dp(2), Color.parseColor("#0F766E"))
-                } else {
-                    setColor(Color.TRANSPARENT)
-                }
-            }
-        val cells = mutableListOf<LinearLayout>()
         fun cellView(position: Int): LinearLayout {
             val cell = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -252,7 +256,6 @@ class MainActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT)
                 setPadding(dp(4), dp(8), dp(4), dp(8))
             }
-            cell.background = highlightBackground(position == selected)
             val icon = ImageView(this).apply {
                 // The official icon of the app, from the phone itself.
                 setImageDrawable(apps[position].loadIcon(packageManager))
@@ -268,11 +271,15 @@ class MainActivity : Activity() {
             cell.addView(icon)
             cell.addView(label)
             cell.setOnClickListener {
-                selected = position
-                cells.forEachIndexed { index, view ->
-                    view.background = highlightBackground(index == selected)
-                }
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                val info = apps[position]
+                val pkg = info.activityInfo.packageName
+                val labelText = info.loadLabel(packageManager).toString()
+                prefs.edit()
+                    .putString(DriveService.KEY_TARGET_PACKAGE, pkg)
+                    .putString(DriveService.KEY_TARGET_LABEL, labelText)
+                    .apply()
+                updateUi()
+                dialog.dismiss()
             }
             return cell
         }
@@ -287,34 +294,16 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
             }
             for (position in start until minOf(start + 3, apps.size)) {
-                val cell = cellView(position)
-                row.addView(cell)
-                cells.add(cell)
+                row.addView(cellView(position))
             }
             rows.addView(row)
         }
         val scroll = ScrollView(this).apply { addView(rows) }
         dialog = AlertDialog.Builder(this)
-            .setTitle("Pick the app your agent may drive")
+            .setTitle("Pick an app")
             .setView(scroll)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Select") { _, _ ->
-                if (selected >= 0) {
-                    val info = apps[selected]
-                    val pkg = info.activityInfo.packageName
-                    val label = info.loadLabel(packageManager).toString()
-                    prefs.edit()
-                        .putString(DriveService.KEY_TARGET_PACKAGE, pkg)
-                        .putString(DriveService.KEY_TARGET_LABEL, label)
-                        .apply()
-                    updateDriveStatus()
-                    status("Target app: $label")
-                }
-            }
             .create()
         dialog.show()
-        // SELECT stays off until an app is chosen.
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
     }
 
     /** Open Accessibility settings so the owner can turn the service on by hand. */
@@ -325,23 +314,6 @@ class MainActivity : Activity() {
             "Turn on AgentPilot in Accessibility, then come back.",
             Toast.LENGTH_LONG
         ).show()
-    }
-
-    private fun updateDriveStatus() {
-        val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
-        appStatus.text = if (target.isEmpty()) {
-            "App: not picked"
-        } else {
-            "App: $target"
-        }
-        val on = DriveService.instance != null
-        if (on) {
-            a11yStatus.text = "Accessibility: ON"
-            a11yStatus.setTextColor(getColor(R.color.accent))
-        } else {
-            a11yStatus.text = "Accessibility: OFF"
-            a11yStatus.setTextColor(getColor(R.color.secondary))
-        }
     }
 
     // ---- The 12 drive tools, real apps via DriveService ----
