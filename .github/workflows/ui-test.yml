@@ -3,6 +3,9 @@
 # Maestro flow that screenshots the real user journey and fails loudly
 # if the tunnel link never appears. No card, no paid service, public
 # repo free tier. No secrets.
+# Owner order 18 Nov 2026 11:32 PKT, FINAL: the test STAYS.
+# Test again and again, so I know myself whether it works or not.
+# (The 11:31 drop order was withdrawn by the owner at 11:32.)
 name: UI Test
 
 on:
