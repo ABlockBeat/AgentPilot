@@ -70,7 +70,7 @@ jobs:
         run: |
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-          maestro --help
+          "$HOME/.maestro/bin/maestro" --help
       - name: Run UI test on emulator
         # Linux runners are supported and recommended by the
         # android-emulator-runner README, faster than macOS. The
