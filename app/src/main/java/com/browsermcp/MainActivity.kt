@@ -14,12 +14,10 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
-import android.widget.BaseAdapter
 import android.widget.Button
-import android.widget.GridView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -32,7 +30,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.4.4.
+ * AgentPilot, Android app, version 0.4.5.
  *
  * One engine only: DriveService, an AccessibilityService that drives
  * the REAL apps on the phone, the ones the owner already uses and is
@@ -195,9 +193,10 @@ class MainActivity : Activity() {
     // ---- Target app picker and Accessibility settings ----
 
     /**
-     * The owner picks ONE app your agent may drive. The picker is a
-     * grid, 3 apps in a row, each with its official icon and name, so
-     * the list is short and there is little scrolling. Only the
+     * The owner picks ONE app your agent may drive. The picker shows
+     * centered rows of 3 apps, each with its official icon and name,
+     * so the list is short, balanced and there is no scrolling. A
+     * short last row is centered too, never left hanging. Only the
      * important apps are listed, Chrome first, and only those that
      * are actually installed. No crypto apps are listed at all, by
      * the owner's order. If none of them is installed, every
@@ -233,55 +232,71 @@ class MainActivity : Activity() {
         val density = resources.displayMetrics.density
         val dp = { v: Int -> (v * density).toInt() }
         var selected = -1
-        val grid = GridView(this).apply {
-            numColumns = 3
-            horizontalSpacing = dp(12)
-            verticalSpacing = dp(12)
-            stretchMode = GridView.STRETCH_COLUMN_WIDTH
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            clipToPadding = false
-        }
-        grid.adapter = object : BaseAdapter() {
-            override fun getCount(): Int = apps.size
-            override fun getItem(position: Int): Any = apps[position]
-            override fun getItemId(position: Int): Long = position.toLong()
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val cell = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER
-                    setPadding(dp(4), dp(8), dp(4), dp(8))
+        lateinit var dialog: AlertDialog
+        fun highlightBackground(isSelected: Boolean): GradientDrawable =
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16).toFloat()
+                if (isSelected) {
+                    setColor(0xFFE0F2F1.toInt())
+                    setStroke(dp(2), Color.parseColor("#0F766E"))
+                } else {
+                    setColor(Color.TRANSPARENT)
                 }
-                // The chosen app is highlighted with a teal border.
-                cell.background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(16).toFloat()
-                    if (position == selected) {
-                        setColor(0xFFE0F2F1.toInt())
-                        setStroke(dp(2), Color.parseColor("#0F766E"))
-                    } else {
-                        setColor(Color.TRANSPARENT)
-                    }
-                }
-                val icon = ImageView(this@MainActivity).apply {
-                    // The official icon of the app, from the phone itself.
-                    setImageDrawable(apps[position].loadIcon(packageManager))
-                    layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
-                }
-                val label = TextView(this@MainActivity).apply {
-                    text = apps[position].loadLabel(packageManager).toString()
-                    gravity = Gravity.CENTER
-                    textSize = 13f
-                    maxLines = 2
-                    ellipsize = TextUtils.TruncateAt.END
-                }
-                cell.addView(icon)
-                cell.addView(label)
-                return cell
             }
+        val cells = mutableListOf<LinearLayout>()
+        fun cellView(position: Int): LinearLayout {
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT)
+                setPadding(dp(4), dp(8), dp(4), dp(8))
+            }
+            cell.background = highlightBackground(position == selected)
+            val icon = ImageView(this).apply {
+                // The official icon of the app, from the phone itself.
+                setImageDrawable(apps[position].loadIcon(packageManager))
+                layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
+            }
+            val label = TextView(this).apply {
+                text = apps[position].loadLabel(packageManager).toString()
+                gravity = Gravity.CENTER
+                textSize = 13f
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            cell.addView(icon)
+            cell.addView(label)
+            cell.setOnClickListener {
+                selected = position
+                cells.forEachIndexed { index, view ->
+                    view.background = highlightBackground(index == selected)
+                }
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+            }
+            return cell
         }
-        val dialog = AlertDialog.Builder(this)
+        // Centered rows of 3, so a short last row sits in the middle.
+        val rows = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        for (start in apps.indices step 3) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            for (position in start until minOf(start + 3, apps.size)) {
+                val cell = cellView(position)
+                row.addView(cell)
+                cells.add(cell)
+            }
+            rows.addView(row)
+        }
+        val scroll = ScrollView(this).apply { addView(rows) }
+        dialog = AlertDialog.Builder(this)
             .setTitle("Pick the app your agent may drive")
-            .setView(grid)
+            .setView(scroll)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Select") { _, _ ->
                 if (selected >= 0) {
@@ -297,12 +312,6 @@ class MainActivity : Activity() {
                 }
             }
             .create()
-        grid.onItemClickListener =
-            AdapterView.OnItemClickListener { _, _, which, _ ->
-                selected = which
-                (grid.adapter as BaseAdapter).notifyDataSetChanged()
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-            }
         dialog.show()
         // SELECT stays off until an app is chosen.
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
