@@ -44,6 +44,17 @@ jobs:
         # version. Without it Gradle signs with a fresh debug key on
         # every runner and Android refuses the update.
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+      - name: Download cloudflared binary
+        # The tunnel binary is 38 MB, over GitHub's 25 MB web-upload
+        # limit, so it is never committed to the repo. The build
+        # fetches the official arm64 release here and places it where
+        # Gradle picks it up as a native lib, so the APK ships it
+        # inside and the phone never downloads anything.
+        run: |
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          curl -sL -o app/src/main/jniLibs/arm64-v8a/libcloudflared.so https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64
+          ls -l app/src/main/jniLibs/arm64-v8a/
+          file app/src/main/jniLibs/arm64-v8a/libcloudflared.so
       - name: Build debug APK
         env:
           KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
@@ -59,7 +70,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.5.1-${{ github.run_number }}
-          name: AgentPilot v0.5.1 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.5.1: change app while staying connected, Disconnect button, and tap the notification to return to AgentPilot."
+          tag_name: v0.5.2-${{ github.run_number }}
+          name: AgentPilot v0.5.2 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.5.2: the tunnel is built into the app, no download, Start Tunnel just works."
           files: app/build/outputs/apk/debug/app-debug.apk
