@@ -48,9 +48,13 @@ name: AgentPilot UI test
       visible: "Chrome"
     commands:
       - tapOn: "Chrome"
+# The second branch runs only while the picker is still open.
+# After Chrome is tapped the picker closes at once, so checking
+# for Chrome would always be true then and the branch would run
+# by mistake. Checking for the picker itself is the right guard.
 - runFlow:
     when:
-      notVisible: "Chrome"
+      visible: "Pick an app"
     commands:
       - tapOn: "Show all apps"
       - tapOn: "Chrome"
