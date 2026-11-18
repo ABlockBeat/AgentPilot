@@ -68,10 +68,15 @@ name: AgentPilot UI test
 # The main button says Start once Accessibility is on. The text
 # is matched exactly, so no other button below it is ever tapped
 # by mistake. The wait covers the service binding after launch.
+# UI Test #79: the service binds before Maestro, drops during the
+# flow (instance null, no onUnbind logged, same pid 3311, so no
+# force-stop), and rebinds about 18s after the Chrome tap
+# (a11yOn=true at 10:33:53). A 15s wait was just short of it.
+# 60s covers the rebind and still fails fast if it never comes.
 - extendedWaitUntil:
     visible:
       text: "^Start$"
-    timeout: 15000
+    timeout: 60000
 - tapOn:
     text: "^Start$"
 - assertVisible: "Running"
