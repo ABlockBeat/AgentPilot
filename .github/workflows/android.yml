@@ -1,4 +1,4 @@
-# Build the Browser MCP Android APK, free, on GitHub Actions.
+# Build the AgentPilot Android APK, free, on GitHub Actions.
 # Runs on push and by hand. No card, no paid service, public repo free tier.
 # The APK is the deliverable, the owner installs it directly on his phone.
 # No Google Play, Play charges a 25 dollar one time developer fee.
@@ -43,12 +43,12 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: browser-mcp-apk
+          name: agentpilot-apk
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.4.5-${{ github.run_number }}
-          name: Browser MCP v0.4.5 build ${{ github.run_number }}
-          body: "Browser MCP Android app, debug APK. New in 0.4.5: the app picker shows centered rows of 3 apps, each with its official icon and name, only the important apps, Chrome first, no crypto apps. Tap an app to select it, then tap Select to confirm."
+          tag_name: v0.4.6-${{ github.run_number }}
+          name: AgentPilot v0.4.6 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.4.6: the repo is now AgentPilot, the same name as the app, and the in-app update check uses the new repo name."
           files: app/build/outputs/apk/debug/app-debug.apk
