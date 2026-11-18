@@ -48,7 +48,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.4.2-${{ github.run_number }}
-          name: Browser MCP v0.4.2 build ${{ github.run_number }}
-          body: "Browser MCP Android app, debug APK. New in 0.4.2: a simple clean design and an in-app update button, so the app updates itself without going to GitHub."
+          tag_name: v0.4.3-${{ github.run_number }}
+          name: Browser MCP v0.4.3 build ${{ github.run_number }}
+          body: "Browser MCP Android app, debug APK. New in 0.4.3: one-time setup, MCP starts by itself when the app opens, so the owner only taps the app and it is ready."
           files: app/build/outputs/apk/debug/app-debug.apk
