@@ -37,7 +37,10 @@ jobs:
           # Same packages as the main build workflow: the default
           # package list asks for the obsolete "tools" package and
           # fails, so only packages that exist are listed here.
-          packages: platform-tools build-tools;34.0.0 platforms;android-34
+          # NDK r27d is included: the UI test build also needs the
+          # embedded Tailscale AAR, or Gradle fails on the missing
+          # file dependency.
+          packages: platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.3.13750724
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -55,6 +58,30 @@ jobs:
           curl --fail -sL -o app/src/main/jniLibs/x86_64/libcloudflared.so https://github.com/cloudflare/cloudflared/releases/download/2026.11.1/cloudflared-linux-amd64
           echo "97bb3b02d23a5980fc9c15a1a270e692da1923f103f920d5b16d4931d5ab55e7  app/src/main/jniLibs/x86_64/libcloudflared.so" | sha256sum -c -
           file app/src/main/jniLibs/x86_64/libcloudflared.so
+      - name: Set up Go 1.27.3
+        # Same pinned Go as the main build workflow: the UI test
+        # build also needs the embedded Tailscale AAR.
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: tailnet/go.sum
+      - name: Cache Go build and gomobile work dirs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/gomobile
+          key: go-build-${{ runner.os }}-${{ hashFiles('tailnet/go.sum') }}
+          restore-keys: |
+            go-build-${{ runner.os }}-
+      - name: Build embedded Tailscale AAR
+        # The emulator is x86_64, so this arm64-only AAR's native
+        # lib never loads there, and the Maestro flow never opens
+        # the TEST screen. The step is still required: without the
+        # AAR file Gradle fails on the missing file dependency.
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.3.13750724
+        run: bash tailnet/build-aar.sh
       - name: Build debug APK
         # No signing key needed: a fresh emulator has no old install
         # to conflict with, so the default debug key is enough.
