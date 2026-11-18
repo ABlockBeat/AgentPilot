@@ -1,7 +1,6 @@
 # AgentPilot
 
-> **Proprietary software. Copyright (c) 2026 ABlockBeat. All rights reserved.**
-> This code is not open source. No permission is granted to use, copy, modify, or distribute it. See [LICENSE](LICENSE).
+> **Copyright (c) 2026 ABlockBeat. All rights reserved.** Free for personal, non-commercial use; commercial use needs permission. See [LICENSE](LICENSE).
 
 <p align="center"><img src="agentpilot-logo.png" width="160" alt="AgentPilot logo"></p>
 
