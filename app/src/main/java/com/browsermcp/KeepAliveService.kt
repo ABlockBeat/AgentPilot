@@ -86,6 +86,7 @@ class KeepAliveService : Service() {
     @Volatile var a11yDead: Boolean = false
         private set
     @Volatile private var lastTunnelLine: String = ""
+    @Volatile private var lastTunnelRawLine: String = ""
     @Volatile private var lastTunnelError: String = ""
 
     /** Cloudflare is the default; ngrok is the alternative. */
@@ -98,6 +99,7 @@ class KeepAliveService : Service() {
     val tunnelRestarting: Boolean get() = activeTunnel().restarting
     val tunnelUrl: String? get() = activeTunnel().publicUrl
     val tunnelLastLine: String get() = lastTunnelLine
+    val tunnelRawLine: String get() = lastTunnelRawLine
     val tunnelError: String get() = lastTunnelError
 
     /** The action log, newest first, for the Help screen. */
@@ -275,6 +277,7 @@ class KeepAliveService : Service() {
     }
 
     private fun launchTunnel() {
+        lastTunnelRawLine = ""
         activeTunnel().start(
             onUrl = {
                 lastTunnelError = ""
@@ -282,7 +285,7 @@ class KeepAliveService : Service() {
                 updateFloatingOverlay()
                 broadcastState()
             },
-            onLog = { line -> lastTunnelLine = line },
+            onLog = { line -> lastTunnelLine = line; lastTunnelRawLine = line },
             onStopped = { broadcastState() },
             onError = { raw -> onTunnelError(raw) }
         )
@@ -296,9 +299,10 @@ class KeepAliveService : Service() {
     }
 
     /**
-     * A tunnel failure in plain words for the owner. The raw detail
-     * goes in the action log only, never on his screen. The last
-     * line is also kept for Help, so a failure says why.
+     * A tunnel failure in plain words for the owner. The plain error
+     * goes on his screen and in the action log. The raw tunnel line
+     * is kept apart from it, so the error never overwrites the real
+     * reason, and Settings shows that raw line.
      */
     private fun onTunnelError(raw: String) {
         lastTunnelLine = "Error: $raw"
