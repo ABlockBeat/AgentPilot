@@ -2,6 +2,9 @@ package com.browsermcp
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
@@ -28,17 +31,33 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.4.8.
+ * AgentPilot, Android app, version 0.5.0.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
  * the next step: set up, turn on Accessibility, start, stop.
+ *
+ * Once a target app is picked, two small buttons appear under
+ * the main button, and only then: Continue to Chrome, so the
+ * owner can log in by hand in the real browser, and Tunnel, so
+ * the owner's agent can reach this phone. A small Help button
+ * sits at the bottom. Help is a guided flow, not a reading list:
+ * every step is a row with a button that does that step right
+ * there, one tap, no dead ends.
  *
  * One engine only: DriveService, an AccessibilityService that drives
  * the REAL apps on the phone, the ones the owner already uses and is
  * already logged into: real Chrome, KuCoin, Bitget, any app the owner
  * picks. That is how your agent drives your browser on your phone: no
  * cloud browser, no laptop, no extension.
+ *
+ * The tunnel lives inside the app, in TunnelManager. No Termux, no
+ * separate download, no Play Store, no outside app at any point.
+ * One tap on Install Tunnel downloads the cloudflared binary, about
+ * 38 MB, one time only, installs it and verifies it runs. Start
+ * Tunnel then opens the public link to the MCP server on this phone.
+ * The tunnel only runs while the app is Running, and only when the
+ * owner taps Start.
  *
  * The in-app WebView browser is gone. It was an option that did not
  * do the real work: exchanges detect a WebView and block logins, so
@@ -66,10 +85,17 @@ class MainActivity : Activity() {
     private lateinit var statusText: TextView
     private lateinit var actionButton: Button
     private lateinit var updateButton: Button
+    private lateinit var continueButton: Button
+    private lateinit var tunnelButton: Button
+    private lateinit var tunnelStatus: TextView
+    private lateinit var helpButton: Button
     private var updateDownloadUrl: String = ""
     private lateinit var prefs: SharedPreferences
     private var mcpServer: McpServer? = null
     private var token: String = UUID.randomUUID().toString()
+    private val tunnelManager: TunnelManager by lazy { TunnelManager(this) }
+    private var installProgress: Int = 0
+    private var lastTunnelLog: String = ""
     var mcpOn: Boolean = false
         private set
 
@@ -82,8 +108,16 @@ class MainActivity : Activity() {
         statusText = findViewById(R.id.statusText)
         actionButton = findViewById(R.id.actionButton)
         updateButton = findViewById(R.id.updateButton)
+        continueButton = findViewById(R.id.continueButton)
+        tunnelButton = findViewById(R.id.tunnelButton)
+        tunnelStatus = findViewById(R.id.tunnelStatus)
+        helpButton = findViewById(R.id.helpButton)
 
         actionButton.setOnClickListener { doNextStep() }
+        continueButton.setOnClickListener { openTargetApp() }
+        tunnelButton.setOnClickListener { onTunnelButton() }
+        tunnelStatus.setOnClickListener { copyTunnelUrl() }
+        helpButton.setOnClickListener { showHelp() }
 
         updateButton.setOnClickListener {
             if (updateDownloadUrl.isNotEmpty()) downloadUpdate(updateDownloadUrl)
@@ -119,6 +153,8 @@ class MainActivity : Activity() {
     }
 
     private fun stopMcp() {
+        tunnelManager.stop()
+        lastTunnelLog = ""
         mcpServer?.stop()
         mcpServer = null
         mcpOn = false
@@ -130,6 +166,11 @@ class MainActivity : Activity() {
      * One status line and one button, the whole interface. The
      * button always does the next step, so there is nothing to
      * figure out: set up, turn on Accessibility, start, stop.
+     * Once a target app is picked, two small buttons appear under
+     * the main button: Continue to Chrome, to log in by hand in
+     * the real browser, and Tunnel, to connect the agent to this
+     * phone. Before a target is picked they stay hidden, so the
+     * home screen stays minimal.
      */
     private fun updateUi() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
@@ -160,6 +201,16 @@ class MainActivity : Activity() {
                 actionButton.text = "Start"
             }
         }
+        // The two small buttons only exist once a target is picked.
+        // Continue to Chrome is the next step after Running: log in
+        // by hand. Then Tunnel connects the agent to this phone.
+        val hasTarget = target.isNotEmpty()
+        continueButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
+        tunnelButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
+        if (hasTarget) {
+            continueButton.text = if (target == "Chrome") "Continue to Chrome" else "Open $target"
+        }
+        updateTunnelUi()
     }
 
     /** The one button does whatever the next step is. */
@@ -314,6 +365,241 @@ class MainActivity : Activity() {
             "Turn on AgentPilot in Accessibility, then come back.",
             Toast.LENGTH_LONG
         ).show()
+    }
+
+    // ---- Continue to Chrome, tunnel, and guided help ----
+
+    /**
+     * Open the picked target app, one tap, so the owner can log in
+     * by hand in the real browser, or check he is already logged in.
+     * Nothing is typed for him, login is always by his own hands.
+     * If no target is picked yet, open the picker instead.
+     */
+    private fun openTargetApp() {
+        val pkg = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
+        val label = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
+        if (pkg.isEmpty()) {
+            showAppPicker()
+            return
+        }
+        val intent = packageManager.getLaunchIntentForPackage(pkg)
+        if (intent == null) {
+            status("Cannot open $label.")
+            return
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+
+    /**
+     * The Tunnel button does whatever the tunnel needs next, one tap:
+     * install it, start it, or stop it. It only works while the app
+     * is Running, because the MCP server must be listening on 8765
+     * first. Otherwise a short toast says to tap Start first.
+     */
+    private fun onTunnelButton() {
+        when {
+            tunnelManager.running -> {
+                tunnelManager.stop()
+                lastTunnelLog = ""
+                updateTunnelUi()
+                status("Tunnel stopped.")
+            }
+            tunnelManager.installing -> {
+                // Button is disabled while installing, nothing to do.
+            }
+            !mcpOn -> status("Tap Start first, then tap Tunnel.")
+            !tunnelManager.installed -> installTunnel()
+            else -> startTunnel()
+        }
+    }
+
+    /**
+     * One tap installs the tunnel: download, save, make executable,
+     * verify it runs. Everything happens inside the app. When the
+     * install finishes, the tunnel starts by itself, so the owner
+     * does not have to tap again.
+     */
+    private fun installTunnel() {
+        installProgress = 0
+        updateTunnelUi()
+        tunnelManager.install(
+            onProgress = { pct ->
+                installProgress = pct
+                updateTunnelUi()
+            },
+            onDone = {
+                installProgress = 100
+                status("Tunnel installed. Starting it now.")
+                updateTunnelUi()
+                startTunnel()
+            },
+            onError = { msg ->
+                status("Tunnel install failed: $msg")
+                updateTunnelUi()
+            }
+        )
+    }
+
+    /** Start the tunnel to the local MCP server, if the app is Running. */
+    private fun startTunnel() {
+        if (!mcpOn) {
+            status("Tap Start first, then tap Tunnel.")
+            return
+        }
+        updateTunnelUi()
+        tunnelManager.start(
+            onUrl = {
+                lastTunnelLog = ""
+                status("Tunnel is on. Tap the link to copy it.")
+                updateTunnelUi()
+            },
+            onLog = { line ->
+                lastTunnelLog = line
+                updateTunnelUi()
+            },
+            onStopped = { updateTunnelUi() },
+            onError = { msg ->
+                status("Tunnel failed: $msg")
+                updateTunnelUi()
+            }
+        )
+    }
+
+    /**
+     * The Tunnel button label and the small tunnel status line always
+     * show the true state: installing with percent, running with the
+     * public link and the last tunnel output line, or idle. The
+     * status line is a tiny terminal-style view, two lines at most,
+     * visible only while the tunnel is installing or running.
+     */
+    private fun updateTunnelUi() {
+        when {
+            tunnelManager.installing -> {
+                tunnelButton.isEnabled = false
+                tunnelButton.text = "Installing… $installProgress%"
+                tunnelStatus.visibility = View.VISIBLE
+                tunnelStatus.text = "Installing tunnel… $installProgress%"
+            }
+            tunnelManager.running -> {
+                tunnelButton.isEnabled = true
+                tunnelButton.text = "Stop Tunnel"
+                tunnelStatus.visibility = View.VISIBLE
+                val url = tunnelManager.publicUrl
+                tunnelStatus.text = if (url != null) {
+                    if (lastTunnelLog.isNotEmpty()) "$url\n$lastTunnelLog" else url
+                } else {
+                    "Starting tunnel…"
+                }
+            }
+            else -> {
+                tunnelButton.isEnabled = true
+                tunnelButton.text = if (tunnelManager.installed) {
+                    "Start Tunnel"
+                } else {
+                    "Install Tunnel (~38 MB, once)"
+                }
+                tunnelStatus.visibility = View.GONE
+            }
+        }
+    }
+
+    /** Tap the tunnel status line to copy the public link. */
+    private fun copyTunnelUrl() {
+        val url = tunnelManager.publicUrl ?: return
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("AgentPilot tunnel", url))
+        status("Tunnel link copied.")
+    }
+
+    /**
+     * Help is a guided flow, not a reading list. Every step is a row
+     * with short text AND a button that DOES that step right there:
+     * tap it and the help closes and the step opens. One tap, no dead
+     * ends, no guessing what to tap next. Steps the owner cannot do
+     * yet, like Start before a target is picked, show a disabled
+     * button instead of a button that leads nowhere.
+     */
+    private fun showHelp() {
+        val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
+        val hasTarget = target.isNotEmpty()
+        val a11yOn = DriveService.instance != null
+        val density = resources.displayMetrics.density
+        val dp = { v: Int -> (v * density).toInt() }
+        lateinit var dialog: AlertDialog
+        fun helpRow(stepText: String, buttonText: String, enabled: Boolean, action: () -> Unit): LinearLayout {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(0), dp(10), dp(0), dp(10))
+            }
+            val text = TextView(this).apply {
+                text = stepText
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val button = Button(this).apply {
+                text = buttonText
+                isEnabled = enabled
+                textSize = 14f
+                minimumHeight = dp(40)
+                setBackgroundResource(R.drawable.rounded_button_outline)
+                setTextColor(getColor(R.color.accent))
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = dp(12)
+                }
+                setOnClickListener {
+                    dialog.dismiss()
+                    action()
+                }
+            }
+            row.addView(text)
+            row.addView(button)
+            return row
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        body.addView(helpRow("1. Pick an app for your agent to drive.", "Pick", true) {
+            showAppPicker()
+        })
+        body.addView(helpRow("2. Turn on Accessibility for AgentPilot.", "Open Settings", true) {
+            openA11ySettings()
+        })
+        body.addView(helpRow("3. Start the app.", "Start", hasTarget && a11yOn && !mcpOn) {
+            startMcp()
+        })
+        val continueLabel = if (target == "Chrome") "Continue to Chrome" else "Open $target"
+        body.addView(helpRow("4. Continue to Chrome and log in by hand.", continueLabel, hasTarget) {
+            openTargetApp()
+        })
+        val tunnelLabel = when {
+            tunnelManager.running -> "Stop Tunnel"
+            tunnelManager.installing -> "Installing…"
+            tunnelManager.installed -> "Start Tunnel"
+            else -> "Install Tunnel"
+        }
+        body.addView(helpRow("5. Tunnel: connect your agent to this phone. One-time download, about 38 MB.", tunnelLabel, !tunnelManager.installing) {
+            onTunnelButton()
+        })
+        val done = TextView(this).apply {
+            text = "Tap Stop on the home screen when you are done."
+            textSize = 14f
+            setTextColor(getColor(R.color.secondary))
+            setPadding(dp(0), dp(12), dp(0), dp(4))
+        }
+        body.addView(done)
+        val scroll = ScrollView(this).apply { addView(body) }
+        dialog = AlertDialog.Builder(this)
+            .setTitle("Help")
+            .setView(scroll)
+            .create()
+        dialog.show()
     }
 
     // ---- The 12 drive tools, real apps via DriveService ----
