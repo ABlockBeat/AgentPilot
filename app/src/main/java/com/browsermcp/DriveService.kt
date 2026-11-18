@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -27,7 +28,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.7.
+ * AgentPilot, drive engine, version 0.6.9.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -60,6 +61,8 @@ import kotlin.random.Random
 class DriveService : AccessibilityService() {
 
     companion object {
+        private const val TAG = "AgentPilot"
+
         @Volatile
         var instance: DriveService? = null
             private set
@@ -97,8 +100,18 @@ class DriveService : AccessibilityService() {
     @Volatile
     private var currentPackage = ""
 
+    override fun onCreate() {
+        super.onCreate()
+        // Diagnostic only: the UI test kept showing "Accessibility
+        // off" while the system said the service was bound, so the
+        // service lifecycle is logged to prove whether it ever
+        // connects in the emulator.
+        Log.i(TAG, "DriveService onCreate")
+    }
+
     override fun onServiceConnected() {
         instance = this
+        Log.i(TAG, "DriveService onServiceConnected")
         // Tell the home screen the service just bound, so its button
         // refreshes from "Turn on Accessibility" to "Start" at once.
         // Without this the button stays stale until the next resume,
@@ -124,8 +137,14 @@ class DriveService : AccessibilityService() {
 
     override fun onInterrupt() { }
 
+    override fun onDestroy() {
+        Log.i(TAG, "DriveService onDestroy")
+        super.onDestroy()
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        Log.i(TAG, "DriveService onUnbind")
         // Same refresh in reverse: the home screen must fall back to
         // "Turn on Accessibility" as soon as the service is gone.
         sendBroadcast(Intent(KeepAliveService.ACTION_STATE_CHANGED).setPackage(packageName))
