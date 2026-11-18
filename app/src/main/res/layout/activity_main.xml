@@ -54,18 +54,6 @@
     </LinearLayout>
 
     <Button
-        android:id="@+id/updateButton"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_marginTop="64dp"
-        android:background="@drawable/rounded_button"
-        android:text="Update"
-        android:textColor="@color/white"
-        android:textSize="17sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
-
-    <Button
         android:id="@+id/actionButton"
         android:layout_width="match_parent"
         android:layout_height="56dp"
@@ -131,14 +119,33 @@
         android:layout_height="0dp"
         android:layout_weight="1" />
 
-    <Button
-        android:id="@+id/helpButton"
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:background="@android:color/transparent"
-        android:minHeight="40dp"
-        android:text="Help"
-        android:textColor="@color/secondary"
-        android:textSize="15sp" />
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/helpButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:minHeight="40dp"
+            android:text="Help"
+            android:textColor="@color/secondary"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/updateButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:minHeight="40dp"
+            android:text="Update"
+            android:textColor="@color/accent"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>
