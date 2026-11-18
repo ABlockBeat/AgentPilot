@@ -59,7 +59,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.4.9-${{ github.run_number }}
-          name: AgentPilot v0.4.9 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.4.9: one stable signing key for every build, so updates install over the old version instead of failing."
+          tag_name: v0.5.0-${{ github.run_number }}
+          name: AgentPilot v0.5.0 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.5.0: built-in tunnel, Continue to Chrome, and in-app help."
           files: app/build/outputs/apk/debug/app-debug.apk
