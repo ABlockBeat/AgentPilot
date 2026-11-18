@@ -11,8 +11,8 @@ android {
         applicationId = "com.browsermcp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.4.1"
+        versionCode = 4
+        versionName = "0.4.2"
     }
 
     buildTypes {
@@ -32,6 +32,8 @@ android {
 }
 
 dependencies {
-    // No external dependencies. Only Android SDK and org.json, which is
-    // bundled in Android. Free, nothing to download, nothing paid.
+    // AndroidX core, only for FileProvider, which serves the downloaded
+    // APK to the system installer. Free, from Google Maven, no account.
+    // org.json is bundled in Android, no download.
+    implementation("androidx.core:core:1.13.1")
 }
