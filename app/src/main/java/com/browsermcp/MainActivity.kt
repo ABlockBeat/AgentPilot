@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.10.
+ * AgentPilot, Android app, version 0.6.11.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -286,9 +286,29 @@ class MainActivity : Activity() {
      * by itself with the session, so there is no tunnel button:
      * the link appears on its own and Share connection sends it.
      */
+    /**
+     * The Accessibility service is on when the system setting lists it.
+     * The in-memory instance can drop briefly while the service rebinds:
+     * the emulator UI test showed it null for a minute while the setting
+     * still listed the service, and it only came back after the test
+     * driver exited. So the setting is the durable truth and the
+     * instance is only a fast path. Reading the setting needs no
+     * permission; a failure here falls back to the instance alone.
+     */
+    private fun isA11yOn(): Boolean {
+        if (DriveService.instance != null) return true
+        return try {
+            val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+            val component = "$packageName/${DriveService::class.java.name}"
+            enabled.split(':').any { it == component }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun updateUi() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
-        val a11yOn = DriveService.instance != null
+        val a11yOn = isA11yOn()
         val running = sessionRunning()
         // Diagnostic only: the UI test kept showing "Accessibility
         // off" while the system said the service was bound. This line
@@ -344,7 +364,7 @@ class MainActivity : Activity() {
     /** The one button does whatever the next step is. */
     private fun doNextStep() {
         val target = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
-        val a11yOn = DriveService.instance != null
+        val a11yOn = isA11yOn()
         when {
             target.isEmpty() -> showAppPicker()
             !a11yOn -> openA11ySettings()
@@ -747,7 +767,7 @@ class MainActivity : Activity() {
     private fun showHelp() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
         val hasTarget = target.isNotEmpty()
-        val a11yOn = DriveService.instance != null
+        val a11yOn = isA11yOn()
         val running = sessionRunning()
         val svc = service()
         lateinit var dialog: AlertDialog
