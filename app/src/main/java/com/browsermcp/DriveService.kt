@@ -5,6 +5,7 @@ package com.browsermcp
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -13,8 +14,10 @@ import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
@@ -542,7 +545,13 @@ class DriveService : AccessibilityService() {
                             FileOutputStream(file).use { out ->
                                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                             }
-                            path.set(file.absolutePath)
+                            // Prefer the public copy: the private file
+                            // above is invisible to Drive, Gallery and
+                            // the file picker, so the owner could never
+                            // send a screenshot anywhere. When the
+                            // public copy fails, the private path is
+                            // still returned, never nothing.
+                            path.set(publishScreenshot(bitmap) ?: file.absolutePath)
                         }
                         buffer?.close()
                     } catch (e: Exception) {
@@ -569,6 +578,48 @@ class DriveService : AccessibilityService() {
     private fun screenshotFile(): File {
         val dir = getExternalFilesDir(null) ?: filesDir
         return File(dir, "drive-latest.png")
+    }
+
+    /**
+     * A second copy of the screenshot in Pictures/AgentPilot, where
+     * the owner, Drive, Gallery and the file picker can all see it.
+     * No permission is needed on Android 10 and newer: an app may
+     * always write its own files to MediaStore. The old shot under
+     * the same name is deleted first, so the picker always finds
+     * exactly one latest screenshot, never a pile of copies.
+     * Returns the public file path, or null when the copy failed.
+     * A failure here never loses the screenshot: the private file
+     * written by the caller stays, and its path is returned instead.
+     */
+    private fun publishScreenshot(bitmap: Bitmap): String? {
+        return try {
+            val name = "drive-latest.png"
+            val folder = "Pictures/AgentPilot"
+            contentResolver.delete(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND " +
+                    "${MediaStore.MediaColumns.RELATIVE_PATH}=?",
+                arrayOf(name, "$folder/")
+            )
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
+            }
+            val uri = contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values
+            ) ?: return null
+            contentResolver.openOutputStream(uri)?.use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            } ?: return null
+            @Suppress("DEPRECATION")
+            Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES
+            ).resolve("AgentPilot/$name").absolutePath
+        } catch (e: Exception) {
+            Log.w(TAG, "Public screenshot copy failed, private file kept", e)
+            null
+        }
     }
 
     // ---- open, back, home, wait ----
