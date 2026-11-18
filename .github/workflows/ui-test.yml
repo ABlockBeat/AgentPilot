@@ -146,6 +146,8 @@ jobs:
           "
           echo "--- crash reports in full ---"
           find maestro-output -name "crash-report.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; cat "$f"; echo; done
+          echo "--- logcat: app's own lines only (never cut by system noise) ---"
+          find maestro-output -name "device-logcat.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; grep -i "AgentPilot" "$f" || echo "(no app log lines in this logcat)"; echo; done
           echo "--- logcat: service lifecycle and crashes ---"
           find maestro-output -name "device-logcat.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; grep -i -E "agentpilot|browsermcp|DriveService|AndroidRuntime|FATAL|Force stopping|force-stop|Crashed|disabled" "$f" | tail -n 200; echo; done
       - name: Upload Maestro output
