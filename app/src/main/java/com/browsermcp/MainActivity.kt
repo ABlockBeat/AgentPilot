@@ -533,7 +533,7 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(0), dp(10), dp(0), dp(10))
             }
-            val text = TextView(this).apply {
+            val stepLabel = TextView(this).apply {
                 text = stepText
                 textSize = 15f
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -557,7 +557,7 @@ class MainActivity : Activity() {
                     action()
                 }
             }
-            row.addView(text)
+            row.addView(stepLabel)
             row.addView(button)
             return row
         }
