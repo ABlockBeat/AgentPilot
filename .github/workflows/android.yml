@@ -59,6 +59,21 @@ jobs:
           echo "b155cec3e48e489cfb8e5c602769fb8c771083018d8881d68b4d18a791567c5a  app/src/main/jniLibs/arm64-v8a/libcloudflared.so" | sha256sum -c -
           ls -l app/src/main/jniLibs/arm64-v8a/
           file app/src/main/jniLibs/arm64-v8a/libcloudflared.so
+      - name: Download ngrok binary
+        # ngrok is the second tunnel, for phones where Cloudflare
+        # does not start. Same size problem as cloudflared, so it
+        # is never committed either. The stable arm64 tarball from
+        # ngrok's own download host; file must say ARM aarch64, or
+        # the build fails instead of shipping a bad file. The
+        # tarball holds one binary, ngrok, renamed to a native lib
+        # name so the app runs it from its native library dir.
+        run: |
+          mkdir -p app/src/main/jniLibs/arm64-v8a /tmp/ngrok-bin
+          curl --fail -sL -o /tmp/ngrok.tgz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz
+          tar -xzf /tmp/ngrok.tgz -C /tmp/ngrok-bin
+          cp /tmp/ngrok-bin/ngrok app/src/main/jniLibs/arm64-v8a/libngrok.so
+          ls -l app/src/main/jniLibs/arm64-v8a/
+          file app/src/main/jniLibs/arm64-v8a/libngrok.so | grep -qi "ARM aarch64"
       - name: Build debug APK
         env:
           KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
@@ -72,6 +87,7 @@ jobs:
         # must never ship silently.
         run: |
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "37818397.*lib/arm64-v8a/libcloudflared.so"
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "lib/arm64-v8a/libngrok.so"
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -80,7 +96,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.6-${{ github.run_number }}
-          name: AgentPilot v0.6.6 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.6: the tunnel link is fixed, the app no longer shows Cloudflare's own API address as the link, it shows the real tunnel link. Copyright headers added to the code files."
+          tag_name: v0.6.7-${{ github.run_number }}
+          name: AgentPilot v0.6.7 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.7: a second tunnel, ngrok, for phones where Cloudflare does not start (free account, paste the key once in Help); a floating window option that shows the connection over other apps; and the tunnel's last message in Help, so a failure says why."
           files: app/build/outputs/apk/debug/app-debug.apk
