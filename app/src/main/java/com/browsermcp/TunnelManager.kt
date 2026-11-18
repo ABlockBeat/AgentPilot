@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * Built-in tunnel for AgentPilot, version 0.6.6.
+ * Built-in tunnel for AgentPilot, version 0.6.7.
  *
  * The tunnel lives inside the app. No Termux, no download, no Play
  * Store, no outside app at any point. The cloudflared binary ships
@@ -58,7 +58,7 @@ import kotlin.concurrent.thread
  * All callbacks run on the main thread, so the caller can touch the
  * UI in them directly.
  */
-class TunnelManager(private val context: Context) {
+class TunnelManager(private val context: Context) : TunnelBackend {
 
     companion object {
         private const val BINARY_NAME = "libcloudflared.so"
@@ -73,18 +73,18 @@ class TunnelManager(private val context: Context) {
 
     @Volatile var wanted: Boolean = false
         private set
-    @Volatile var restarting: Boolean = false
+    @Volatile override var restarting: Boolean = false
         private set
 
-    @Volatile var publicUrl: String? = null
+    @Volatile override var publicUrl: String? = null
         private set
-    @Volatile var running: Boolean = false
+    @Volatile override var running: Boolean = false
         private set
-    @Volatile var installing: Boolean = false
+    @Volatile override var installing: Boolean = false
         private set
 
     /** The binary is installed when the file exists and is executable. */
-    val installed: Boolean
+    override val installed: Boolean
         get() {
             val f = binaryFile()
             return f.exists() && f.canExecute()
@@ -98,7 +98,7 @@ class TunnelManager(private val context: Context) {
      * this phone, then done runs. Progress reports 100 at once, so
      * the caller UI barely changes.
      */
-    fun install(
+    override fun install(
         onProgress: (Int) -> Unit,
         onDone: () -> Unit,
         onError: (String) -> Unit
@@ -139,7 +139,7 @@ class TunnelManager(private val context: Context) {
      * appears and no restart is left, onError runs with the last
      * output line.
      */
-    fun start(
+    override fun start(
         onUrl: (String) -> Unit,
         onLog: (String) -> Unit,
         onStopped: () -> Unit,
@@ -251,7 +251,7 @@ class TunnelManager(private val context: Context) {
     }
 
     /** Kill the tunnel process, if one is running. Safe to call anytime. */
-    fun stop() {
+    override fun stop() {
         wanted = false
         restarting = false
         restartRunnable?.let { mainHandler.removeCallbacks(it) }
