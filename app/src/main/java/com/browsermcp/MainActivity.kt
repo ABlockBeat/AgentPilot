@@ -22,6 +22,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -37,7 +38,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.6.
+ * AgentPilot, Android app, version 0.6.7.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -633,6 +634,51 @@ class MainActivity : Activity() {
         startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
     }
 
+    /** Switch the tunnel service. The tunnel restarts on the new one. */
+    private fun switchTunnelBackend() {
+        val current = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
+        val next = if (current == "ngrok") "cloudflare" else "ngrok"
+        prefs.edit().putString(KeepAliveService.KEY_TUNNEL_BACKEND, next).apply()
+        status("Tunnel service: $next.")
+        if (sessionRunning()) {
+            sendServiceAction(KeepAliveService.ACTION_STOP_TUNNEL)
+            sendServiceAction(KeepAliveService.ACTION_START_TUNNEL)
+        }
+    }
+
+    /** Save the ngrok key once. The tunnel restarts on ngrok with it. */
+    private fun saveNgrokKey(token: String) {
+        if (token.isEmpty()) {
+            status("Paste the key first.")
+            return
+        }
+        prefs.edit().putString(KeepAliveService.KEY_NGROK_TOKEN, token).apply()
+        status("ngrok key saved.")
+        val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
+        if (backend == "ngrok" && sessionRunning()) {
+            sendServiceAction(KeepAliveService.ACTION_STOP_TUNNEL)
+            sendServiceAction(KeepAliveService.ACTION_START_TUNNEL)
+        }
+    }
+
+    /** Floating window on or off. Needs the overlay permission once. */
+    private fun toggleFloatingWindow() {
+        if (!Settings.canDrawOverlays(this)) {
+            status("Allow 'Display over other apps', then tap Show again.")
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            return
+        }
+        val on = !prefs.getBoolean(KeepAliveService.KEY_FLOATING_WINDOW, false)
+        val svc = service()
+        if (svc == null) {
+            prefs.edit().putBoolean(KeepAliveService.KEY_FLOATING_WINDOW, on).apply()
+            status(if (on) "Floating window will show when the app starts." else "Floating window off.")
+            return
+        }
+        svc.setFloatingWindow(on)
+        status(if (on) "Floating window on." else "Floating window off.")
+    }
+
     /** A new connection key. The old one stops working at once. */
     private fun newTokenFlow() {
         DriveService.newToken(this)
@@ -734,6 +780,58 @@ class MainActivity : Activity() {
             setPadding(dp(0), dp(10), dp(0), dp(10))
         }
         body.addView(tunnelNote)
+        // The tunnel's last message, so a failure says WHY instead
+        // of only "Try again". The owner reads it and tells me.
+        val tunnelLine = TextView(this).apply {
+            text = "Tunnel: " + (svc?.tunnelLastLine?.takeIf { it.isNotEmpty() } ?: "no messages yet")
+            textSize = 13f
+            setTextColor(getColor(R.color.secondary))
+            setPadding(dp(0), dp(2), dp(0), dp(10))
+        }
+        body.addView(tunnelLine)
+        // The tunnel service: Cloudflare is free with no account,
+        // ngrok is the alternative when Cloudflare does not start.
+        val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
+        body.addView(helpRow("Tunnel service: $backend", "Switch", true) {
+            switchTunnelBackend()
+        })
+        // The ngrok key: paste once, saved, never shown back.
+        val hasNgrokKey = !(prefs.getString(KeepAliveService.KEY_NGROK_TOKEN, "") ?: "").isEmpty()
+        val ngrokKeyInput = EditText(this).apply {
+            hint = if (hasNgrokKey) "ngrok key saved, paste to replace" else "Paste ngrok key here"
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val ngrokKeySave = Button(this).apply {
+            text = "Save key"
+            textSize = 14f
+            minimumHeight = dp(40)
+            setBackgroundResource(R.drawable.rounded_button_outline)
+            setTextColor(getColor(R.color.accent))
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = dp(12)
+            }
+            setOnClickListener { saveNgrokKey(ngrokKeyInput.text.toString().trim()) }
+        }
+        val ngrokKeyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(0), dp(10), dp(0), dp(10))
+            addView(ngrokKeyInput)
+            addView(ngrokKeySave)
+        }
+        body.addView(ngrokKeyRow)
+        // The floating window: a small status and link over other
+        // apps, so the owner sees the connection while the agent
+        // drives Chrome.
+        val floatingOn = prefs.getBoolean(KeepAliveService.KEY_FLOATING_WINDOW, false)
+        body.addView(helpRow("Floating window over other apps.", if (floatingOn) "Hide" else "Show", true) {
+            toggleFloatingWindow()
+        })
         // The connection key, shown in full, tap to copy. The agent
         // needs this key together with the tunnel link.
         val keyLabel = TextView(this).apply {
