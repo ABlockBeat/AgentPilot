@@ -80,7 +80,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.4-${{ github.run_number }}
-          name: AgentPilot v0.6.4 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.4: the home button refreshes the moment the Accessibility service binds or unbinds, so it never stays stuck on the wrong step after a fresh install."
+          tag_name: v0.6.5-${{ github.run_number }}
+          name: AgentPilot v0.6.5 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.5: the Update button never sits dead: a tap always answers, a good downloaded APK installs at once instead of downloading 21 MB again, downloads are verified before the installer opens, and update messages stay on screen instead of vanishing."
           files: app/build/outputs/apk/debug/app-debug.apk
