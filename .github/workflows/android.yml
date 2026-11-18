@@ -48,7 +48,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.4.6-${{ github.run_number }}
-          name: AgentPilot v0.4.6 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.4.6: the repo is now AgentPilot, the same name as the app, and the in-app update check uses the new repo name."
+          tag_name: v0.4.8-${{ github.run_number }}
+          name: AgentPilot v0.4.8 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.4.8: a minimal home screen, one status line and one button, and tap an app to pick it."
           files: app/build/outputs/apk/debug/app-debug.apk
