@@ -99,7 +99,8 @@ jobs:
             adb shell settings get secure accessibility_enabled
             for i in 1 2 3 4 5 6; do if adb shell dumpsys accessibility | grep -qi "browsermcp"; then echo "service bound after check $i"; break; fi; sleep 5; done
             adb shell dumpsys accessibility | grep -i "browsermcp" || echo "SERVICE NOT FOUND IN DUMPSYS"
-            maestro test --test-output-dir maestro-output maestro/agentpilot-flow.yaml
+            adb shell dumpsys accessibility
+            maestro test --test-output-dir maestro-output maestro/agentpilot-flow.yaml || (adb shell dumpsys accessibility; exit 1)
       - name: Show failure hierarchy in log
         # The Maestro step prints only the failed assertion, never what
         # was actually on screen. Dump the debug files into the log
