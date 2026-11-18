@@ -1,3 +1,5 @@
+// Copyright (c) 2026 ABlockBeat. All rights reserved.
+
 package com.browsermcp
 
 import android.accessibilityservice.AccessibilityService
@@ -25,7 +27,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.4.
+ * AgentPilot, drive engine, version 0.6.6.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
