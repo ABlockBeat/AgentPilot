@@ -94,7 +94,7 @@
         android:layout_height="48dp"
         android:layout_marginTop="12dp"
         android:background="@drawable/rounded_button_outline"
-        android:text="Install Tunnel (~38 MB, once)"
+        android:text="Start Tunnel"
         android:textColor="@color/accent"
         android:textSize="16sp"
         android:textStyle="bold"
