@@ -4,33 +4,34 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import java.io.File
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * Built-in tunnel for AgentPilot, version 0.5.0.
+ * Built-in tunnel for AgentPilot, version 0.5.2.
  *
- * The tunnel lives inside the app. No Termux, no separate download,
- * no Play Store, no outside app at any point. One tap on "Install
- * Tunnel" and the app does everything by itself: it downloads the
- * cloudflared binary into the app's private files, makes it
- * executable, verifies it runs, and reports ready. The owner does
- * nothing else.
+ * The tunnel lives inside the app. No Termux, no download, no Play
+ * Store, no outside app at any point. The cloudflared binary ships
+ * inside the APK as a native library, and the installer extracts it
+ * to the app native library dir, where Android lets the app run it.
+ *
+ * Why bundled: version 0.5.0 downloaded the binary into the app
+ * private files dir and tried to run it there. Android 10 and newer
+ * refuse to run a program from the app data dir, so the owner phone
+ * answered "Cannot run program" and the tunnel never started. A
+ * native library is the fix: it is extracted at install time to a
+ * dir the app is allowed to run programs from.
  *
  * How it works:
- * - Install: download the official cloudflared arm64 binary, about
- *   38 MB, one time only, from the Cloudflare release page. Save it
- *   in the app's private files dir, chmod it executable, then run
- *   "cloudflared version" to prove the binary really runs on this
- *   phone. Any failure is reported as a plain error, never silent.
- * - Start: run "cloudflared tunnel --url http://127.0.0.1:8765".
- *   The MCP server must already be listening on 8765, so the tunnel
- *   only starts while the app is Running. The first
- *   trycloudflare.com URL in the output is the public
- *   link, shown in the app and tappable to copy.
+ * - Check: run the bundled binary with "version". It must exit 0
+ *   and print "cloudflared". If the file is missing or not
+ *   runnable, the only fix is reinstalling the app, and the error
+ *   says so in plain words.
+ * - Start: run the bundled binary with "tunnel" and the local MCP
+ *   server address 127.0.0.1 port 8765. The MCP server must already
+ *   be listening on 8765, so the tunnel only starts while the app
+ *   is Running. The first trycloudflare.com URL in the output is
+ *   the public link, shown in the app and tappable to copy.
  * - Stop: kill the process. The tunnel is also stopped when the app
  *   is destroyed, and when the drive session stops.
  *
@@ -52,9 +53,7 @@ import kotlin.concurrent.thread
 class TunnelManager(private val context: Context) {
 
     companion object {
-        const val DOWNLOAD_URL =
-            "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
-        private const val BINARY_NAME = "cloudflared"
+        private const val BINARY_NAME = "libcloudflared.so"
         private val TUNNEL_URL_REGEX = Regex("https://[A-Za-z0-9-]+\\.trycloudflare\\.com")
     }
 
@@ -75,12 +74,13 @@ class TunnelManager(private val context: Context) {
             return f.exists() && f.canExecute()
         }
 
-    private fun binaryFile(): File = File(context.filesDir, BINARY_NAME)
+    private fun binaryFile(): File = File(context.applicationInfo.nativeLibraryDir, BINARY_NAME)
 
     /**
-     * Download, install and verify the tunnel binary. One tap does
-     * everything. Progress is 0 to 100. If the binary is already
-     * installed, done runs at once and nothing is downloaded again.
+     * Check the bundled tunnel binary. There is nothing to download:
+     * the binary ships inside the APK. This only proves it runs on
+     * this phone, then done runs. Progress reports 100 at once, so
+     * the caller UI barely changes.
      */
     fun install(
         onProgress: (Int) -> Unit,
@@ -88,58 +88,23 @@ class TunnelManager(private val context: Context) {
         onError: (String) -> Unit
     ) {
         if (installing) return
-        if (installed) {
-            mainHandler.post { onDone() }
+        if (!installed) {
+            mainHandler.post { onError("Tunnel binary missing, reinstall the app") }
             return
         }
         installing = true
         thread {
             try {
-                val tmp = File(context.filesDir, "$BINARY_NAME.tmp")
-                val conn = URL(DOWNLOAD_URL).openConnection() as HttpURLConnection
-                conn.instanceFollowRedirects = true
-                conn.connectTimeout = 15000
-                conn.readTimeout = 60000
-                conn.setRequestProperty("User-Agent", "AgentPilot")
-                conn.connect()
-                if (conn.responseCode != 200) {
-                    throw RuntimeException("Download failed, HTTP " + conn.responseCode)
-                }
-                val total = conn.contentLengthLong
-                var done = 0L
-                conn.inputStream.use { input ->
-                    FileOutputStream(tmp).use { output ->
-                        val buf = ByteArray(8192)
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            output.write(buf, 0, n)
-                            done += n
-                            if (total > 0) {
-                                val pct = ((done * 100) / total).toInt().coerceIn(0, 100)
-                                mainHandler.post { onProgress(pct) }
-                            }
-                        }
-                    }
-                }
-                // Make it executable, then prove it runs on this phone.
-                if (!tmp.setExecutable(true)) {
-                    val chmod = Runtime.getRuntime().exec(arrayOf("chmod", "700", tmp.absolutePath))
-                    if (chmod.waitFor() != 0) {
-                        throw RuntimeException("Could not make the tunnel executable")
-                    }
-                }
-                val check = Runtime.getRuntime().exec(arrayOf(tmp.absolutePath, "version"))
+                val check = Runtime.getRuntime().exec(arrayOf(binaryFile().absolutePath, "version"))
                 val out = check.inputStream.bufferedReader().use { it.readText() } +
                     check.errorStream.bufferedReader().use { it.readText() }
                 val code = check.waitFor()
-                if (code != 0 || !out.contains("cloudflared")) {
-                    throw RuntimeException("Tunnel download is not a working cloudflared binary")
-                }
-                if (!tmp.renameTo(binaryFile())) {
-                    throw RuntimeException("Could not install the tunnel")
-                }
                 installing = false
+                if (code != 0 || !out.contains("cloudflared")) {
+                    mainHandler.post { onError("Tunnel binary is not working, reinstall the app") }
+                    return@thread
+                }
+                mainHandler.post { onProgress(100) }
                 mainHandler.post { onDone() }
             } catch (e: Exception) {
                 installing = false
@@ -164,7 +129,7 @@ class TunnelManager(private val context: Context) {
     ) {
         if (running) return
         if (!installed) {
-            mainHandler.post { onError("Tunnel is not installed yet. Tap Install Tunnel first.") }
+            mainHandler.post { onError("Tunnel binary missing, reinstall the app") }
             return
         }
         running = true
