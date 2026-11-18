@@ -94,12 +94,16 @@ jobs:
             maestro test --test-output-dir maestro-output maestro/agentpilot-flow.yaml
       - name: Show failure hierarchy in log
         # The Maestro step prints only the failed assertion, never what
-        # was actually on screen. Dump the debug hierarchy into the log
+        # was actually on screen. Dump the debug files into the log
         # itself, so the next failure says what the emulator showed.
+        # NOTE: the output dir name has a space in it ("AgentPilot UI
+        # test"), so the find loop must be NUL-delimited, or head gets
+        # a truncated path and the step fails. The hierarchy file is a
+        # .json, not .xml, and the crash report is a .txt.
         if: always()
         run: |
           ls -R maestro-output || true
-          for f in $(find maestro-output -name "*.xml" -o -name "*.txt" 2>/dev/null); do echo "== $f"; head -c 6000 "$f"; echo; done
+          find maestro-output -type f \( -name "*.json" -o -name "*.txt" -o -name "*.log" \) -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; head -c 6000 "$f"; echo; done
       - name: Upload Maestro output
         # Always runs, even when the flow fails, so the screenshots
         # are there to look at either way.
