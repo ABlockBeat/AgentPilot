@@ -94,6 +94,14 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell settings put secure enabled_accessibility_services com.browsermcp/com.browsermcp.DriveService
             adb shell settings put secure accessibility_enabled 1
+            echo "--- accessibility service state ---"
+            adb shell settings get secure enabled_accessibility_services
+            adb shell settings get secure accessibility_enabled
+            for i in 1 2 3 4 5 6; do
+              if adb shell dumpsys accessibility | grep -qi "browsermcp"; then echo "service bound after check $i"; break; fi
+              sleep 5
+            done
+            adb shell dumpsys accessibility | grep -i "browsermcp" || echo "SERVICE NOT FOUND IN DUMPSYS"
             maestro test --test-output-dir maestro-output maestro/agentpilot-flow.yaml
       - name: Show failure hierarchy in log
         # The Maestro step prints only the failed assertion, never what
@@ -107,6 +115,27 @@ jobs:
         run: |
           ls -R maestro-output || true
           find maestro-output -type f \( -name "*.json" -o -name "*.txt" -o -name "*.log" \) -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; head -c 6000 "$f"; echo; done
+          echo "--- all text on screen at each failure ---"
+          python3 -c "
+          import json, glob
+          for f in sorted(glob.glob('maestro-output/**/screen-hierarchy/*.json', recursive=True)):
+              print('==', f)
+              try:
+                  d = json.load(open(f))
+                  texts = set()
+                  def walk(n):
+                      if isinstance(n, dict):
+                          if n.get('text'): texts.add(str(n['text']))
+                          for v in n.values(): walk(v)
+                      elif isinstance(n, list):
+                          for v in n: walk(v)
+                  walk(d)
+                  print('TEXTS ON SCREEN:', sorted(texts))
+              except Exception as e:
+                  print('parse failed:', e)
+          "
+          echo "--- crash reports in full ---"
+          find maestro-output -name "crash-report.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; cat "$f"; echo; done
       - name: Upload Maestro output
         # Always runs, even when the flow fails, so the screenshots
         # are there to look at either way.
