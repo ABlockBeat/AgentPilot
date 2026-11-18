@@ -3,12 +3,12 @@
 # What it tests, in order:
 #   Part 1, fresh install: the home screen shows AgentPilot with
 #   "Not set up", and "Set up" opens the "Pick an app" picker.
-#   Part 2, full journey: pick Chrome, reach Running, start the
-#   tunnel, and the trycloudflare.com link MUST appear on screen.
-#   If the link never appears, the flow FAILS. That is the bug
-#   this test hunts: on the owner's phone the tunnel starts but
-#   the link never shows. Then Help opens and the connection key
-#   must be visible.
+#   Part 2, full journey: pick Chrome, reach Running, the tunnel
+#   starts by itself with the session, and the trycloudflare.com
+#   link MUST appear on screen. If the link never appears, the flow
+#   FAILS. That is the bug this test hunts: on the owner's phone the
+#   tunnel starts but the link never shows. Then Help opens and the
+#   connection key must be visible.
 #
 # What it needs before it runs (the CI workflow does this):
 #   - The APK installed on the emulator.
@@ -52,7 +52,7 @@ name: AgentPilot UI test
       - tapOn: "Show all apps"
       - tapOn: "Chrome"
 # The main button says Start once Accessibility is on. The text
-# is matched exactly, so "Start Tunnel" below it is never tapped
+# is matched exactly, so no other button below it is ever tapped
 # by mistake. The wait covers the service binding after launch.
 - extendedWaitUntil:
     visible:
@@ -63,15 +63,17 @@ name: AgentPilot UI test
 - assertVisible: "Running"
 - takeScreenshot: home-running
 
-# Part 3: the tunnel link. This MUST appear within 60 seconds.
-# If it does not, the flow fails here. That failure is the point:
-# it means the tunnel started but the link never showed, the same
-# bug the owner sees on his phone.
-- tapOn: "Start Tunnel"
+# Part 3: the tunnel link. The tunnel starts by itself with the
+# session now, there is no tunnel button to tap. The link
+# MUST appear within 60 seconds. If it does not, the flow fails
+# here. That failure is the point: it means the tunnel started
+# but the link never showed, the same bug the owner sees on his
+# phone. Once the link is there, Share connection must show too.
 - extendedWaitUntil:
     visible: "trycloudflare.com"
     timeout: 60000
 - assertVisible: "trycloudflare.com"
+- assertVisible: "Share connection"
 - takeScreenshot: tunnel-link-visible
 
 # Part 4: the connection key lives in Help.
