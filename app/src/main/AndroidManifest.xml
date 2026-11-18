@@ -25,6 +25,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".TailnetTestActivity"
+            android:exported="false" />
         <service
             android:name=".DriveService"
             android:exported="false"
