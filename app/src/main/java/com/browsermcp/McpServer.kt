@@ -13,7 +13,7 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, local only, version 0.6.10.
+ * Built-in MCP server, streamable HTTP, local only, version 0.6.11.
  *
  * Binds 127.0.0.1 port 8765 only, never 0.0.0.0, never reachable off the
  * phone. Every request needs Authorization: Bearer, with the token the
@@ -169,7 +169,7 @@ class McpServer(
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.10"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.11"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")
