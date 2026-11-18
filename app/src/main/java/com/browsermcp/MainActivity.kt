@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.12.
+ * AgentPilot, Android app, version 0.6.13.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -110,6 +110,7 @@ class MainActivity : Activity() {
     private lateinit var changeButton: Button
     private lateinit var tunnelStatus: TextView
     private lateinit var helpButton: Button
+    private lateinit var settingsButton: Button
     private var updateDownloadUrl: String = ""
     private var updateVersion: String = ""
     private var downloading: Boolean = false
@@ -161,6 +162,7 @@ class MainActivity : Activity() {
         changeButton = findViewById(R.id.changeButton)
         tunnelStatus = findViewById(R.id.tunnelStatus)
         helpButton = findViewById(R.id.helpButton)
+        settingsButton = findViewById(R.id.settingsButton)
 
         actionButton.setOnClickListener { doNextStep() }
         continueButton.setOnClickListener { openTargetApp() }
@@ -169,6 +171,7 @@ class MainActivity : Activity() {
         changeButton.setOnClickListener { showAppPicker() }
         tunnelStatus.setOnClickListener { copyTunnelUrl() }
         helpButton.setOnClickListener { showHelp() }
+        settingsButton.setOnClickListener { showSettings() }
 
         updateButton.setOnClickListener {
             when {
@@ -551,9 +554,16 @@ class MainActivity : Activity() {
      * Open the picked target app, one tap, so the owner can log in
      * by hand in the real browser, or check he is already logged in.
      * Nothing is typed for him, login is always by his own hands.
-     * If no target is picked yet, open the picker instead.
+     * The app only opens once the tunnel link exists: without the
+     * link the connection is not up yet. The buttons are disabled
+     * until then; this is the guard for any other path that calls
+     * this. If no target is picked yet, open the picker instead.
      */
     private fun openTargetApp() {
+        if (service()?.tunnelUrl == null) {
+            status("Wait for the tunnel link first.")
+            return
+        }
         val pkg = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
         val label = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
         if (pkg.isEmpty()) {
@@ -617,6 +627,10 @@ class MainActivity : Activity() {
         // both need a link, and Copy is the one that works when the
         // share sheet does not.
         copyButton.visibility = shareButton.visibility
+        // Continue to Chrome only opens once the tunnel link exists.
+        // Until the link is there the connection is not up yet and
+        // opening Chrome leads nowhere: the owner asked for this gate.
+        continueButton.isEnabled = url != null
     }
 
     /** Tap the tunnel status line to copy the public link. */
@@ -757,12 +771,15 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Help is a guided flow, not a reading list. Every step is a row
-     * with short text AND a button that DOES that step right there:
-     * tap it and the help closes and the step opens. One tap, no dead
-     * ends, no guessing what to tap next. Steps the owner cannot do
-     * yet, like Start before a target is picked, show a disabled
-     * button instead of a button that leads nowhere.
+     * Help is a guided flow, not a reading list: only the five steps,
+     * each a row with short text AND a button that DOES that step
+     * right there. Tap it and the help closes and the step opens.
+     * One tap, no dead ends, no guessing what to tap next. Steps the
+     * owner cannot do yet, like Start before a target is picked, or
+     * Continue to Chrome before the tunnel link exists, show a
+     * disabled button instead of a button that leads nowhere. The
+     * tunnel, the key, and the app settings live in Settings, not
+     * here: each thing in the part it belongs to.
      */
     private fun showHelp() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
@@ -819,7 +836,7 @@ class MainActivity : Activity() {
             startMcp()
         })
         val continueLabel = if (target == "Chrome") "Continue to Chrome" else "Open $target"
-        body.addView(helpRow("4. Continue to Chrome and log in by hand.", continueLabel, hasTarget) {
+        body.addView(helpRow("4. Continue to Chrome and log in by hand.", continueLabel, hasTarget && svc?.tunnelUrl != null) {
             openTargetApp()
         })
         // The tunnel starts by itself with the session. There is
@@ -831,6 +848,81 @@ class MainActivity : Activity() {
             setPadding(dp(0), dp(10), dp(0), dp(10))
         }
         body.addView(tunnelNote)
+        val done = TextView(this).apply {
+            text = "Tap Disconnect on the home screen when you are done."
+            textSize = 14f
+            setTextColor(getColor(R.color.secondary))
+            setPadding(dp(0), dp(4), dp(0), dp(4))
+        }
+        body.addView(done)
+        val scroll = ScrollView(this).apply { addView(body) }
+        dialog = AlertDialog.Builder(this)
+            .setTitle("Help")
+            .setView(scroll)
+            .create()
+        dialog.show()
+    }
+
+    /**
+     * Settings holds everything that is not guidance: the tunnel,
+     * the connection key, and the app. Help holds only the steps.
+     * The owner asked for this split: each thing lives in the part
+     * it belongs to, instead of everything dumped into Help. Share
+     * is not here: the home screen already has Share and Copy once
+     * the link exists, so a second Share row would only duplicate it.
+     */
+    private fun showSettings() {
+        val svc = service()
+        val running = sessionRunning()
+        lateinit var dialog: AlertDialog
+        fun settingRow(stepText: String, buttonText: String, enabled: Boolean, action: () -> Unit): LinearLayout {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(0), dp(10), dp(0), dp(10))
+            }
+            val stepLabel = TextView(this).apply {
+                text = stepText
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val button = Button(this).apply {
+                text = buttonText
+                isEnabled = enabled
+                textSize = 14f
+                minimumHeight = dp(40)
+                setBackgroundResource(R.drawable.rounded_button_outline)
+                setTextColor(getColor(R.color.accent))
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = dp(12)
+                }
+                setOnClickListener {
+                    dialog.dismiss()
+                    action()
+                }
+            }
+            row.addView(stepLabel)
+            row.addView(button)
+            return row
+        }
+        fun sectionHeading(text: String): TextView {
+            return TextView(this).apply {
+                this.text = text
+                textSize = 13f
+                setTextColor(getColor(R.color.secondary))
+                setPadding(dp(0), dp(14), dp(0), dp(2))
+            }
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        // Tunnel: the last message, the service, and the key.
+        body.addView(sectionHeading("Tunnel"))
         // The tunnel's last message, so a failure says WHY instead
         // of only "Try again". The owner reads it and tells me.
         val tunnelLine = TextView(this).apply {
@@ -843,7 +935,7 @@ class MainActivity : Activity() {
         // The tunnel service: Cloudflare is free with no account,
         // ngrok is the alternative when Cloudflare does not start.
         val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
-        body.addView(helpRow("Tunnel service: $backend", "Switch", true) {
+        body.addView(settingRow("Tunnel service: $backend", "Switch", true) {
             switchTunnelBackend()
         })
         // The ngrok key: paste once, saved, never shown back.
@@ -876,15 +968,14 @@ class MainActivity : Activity() {
             addView(ngrokKeySave)
         }
         body.addView(ngrokKeyRow)
-        // The floating window: a small status and link over other
-        // apps, so the owner sees the connection while the agent
-        // drives Chrome.
-        val floatingOn = prefs.getBoolean(KeepAliveService.KEY_FLOATING_WINDOW, false)
-        body.addView(helpRow("Floating window over other apps.", if (floatingOn) "Hide" else "Show", true) {
-            toggleFloatingWindow()
+        body.addView(settingRow("See what the agent did.", "View", true) {
+            showActionLog()
         })
-        // The connection key, shown in full, tap to copy. The agent
-        // needs this key together with the tunnel link.
+        body.addView(settingRow("Test the connection.", "Test", running) {
+            testConnection()
+        })
+        // Connection key: shown in full, tap to copy, and a new key.
+        body.addView(sectionHeading("Connection key"))
         val keyLabel = TextView(this).apply {
             text = "Connection key (tap to copy):"
             textSize = 14f
@@ -901,20 +992,20 @@ class MainActivity : Activity() {
             setOnClickListener { copyToken() }
         }
         body.addView(tokenView)
-        body.addView(helpRow("Share the connection (link + key).", "Share", svc?.tunnelUrl != null) {
-            shareConnection()
-        })
-        body.addView(helpRow("See what the agent did.", "View", true) {
-            showActionLog()
-        })
-        body.addView(helpRow("Test the connection.", "Test", running) {
-            testConnection()
-        })
-        body.addView(helpRow("Keep the app running when the screen is off.", "Battery settings", true) {
-            openBatterySettings()
-        })
-        body.addView(helpRow("New connection key. The old one stops working.", "New key", true) {
+        body.addView(settingRow("New connection key. The old one stops working.", "New key", true) {
             newTokenFlow()
+        })
+        // App: the floating window and staying alive.
+        body.addView(sectionHeading("App"))
+        // The floating window: a small status and link over other
+        // apps, so the owner sees the connection while the agent
+        // drives Chrome.
+        val floatingOn = prefs.getBoolean(KeepAliveService.KEY_FLOATING_WINDOW, false)
+        body.addView(settingRow("Floating window over other apps.", if (floatingOn) "Hide" else "Show", true) {
+            toggleFloatingWindow()
+        })
+        body.addView(settingRow("Keep the app running when the screen is off.", "Battery settings", true) {
+            openBatterySettings()
         })
         val versionView = TextView(this).apply {
             text = "AgentPilot " + currentVersionName()
@@ -923,16 +1014,9 @@ class MainActivity : Activity() {
             setPadding(dp(0), dp(12), dp(0), dp(0))
         }
         body.addView(versionView)
-        val done = TextView(this).apply {
-            text = "Tap Disconnect on the home screen when you are done."
-            textSize = 14f
-            setTextColor(getColor(R.color.secondary))
-            setPadding(dp(0), dp(4), dp(0), dp(4))
-        }
-        body.addView(done)
         val scroll = ScrollView(this).apply { addView(body) }
         dialog = AlertDialog.Builder(this)
-            .setTitle("Help")
+            .setTitle("Settings")
             .setView(scroll)
             .create()
         dialog.show()
