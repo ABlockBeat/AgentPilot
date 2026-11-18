@@ -167,7 +167,7 @@ class McpServer(
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.2"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.5"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")
