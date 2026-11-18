@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -95,7 +96,7 @@ class KeepAliveService : Service() {
         }
     }
 
-    private val watchdogRunnable = Runnable {
+    private val watchdogRunnable: Runnable = Runnable {
         if (!sessionRunning) return@Runnable
         val dead = DriveService.instance == null
         if (dead != a11yDead) {
