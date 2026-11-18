@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.13.
+ * AgentPilot, Android app, version 0.6.14.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -1026,20 +1026,21 @@ class MainActivity : Activity() {
 
     /**
      * Check the latest public release on GitHub, in a background thread.
-     * If it is newer than this app, the update downloads by itself in the
-     * background and the installer opens on its own, so the owner never
-     * downloads an update by hand. The one tap Android still needs is the
-     * system Install dialog: a sideloaded app cannot install silently.
-     * If that install is dismissed, the Update button stays for a retry.
-     * Fails silently when offline, never blocks the UI.
+     * If it is newer than this app, the Update button appears and
+     * nothing downloads until the owner taps it: the update only ever
+     * happens on his tap. The one tap Android still needs after that
+     * is the system Install dialog: a sideloaded app cannot install
+     * silently. If that install is dismissed, the Update button stays
+     * for a retry. Fails silently when offline, never blocks the UI.
      */
     /**
      * Check GitHub for a newer release. When one is found the Update
-     * button appears with the download link armed. A tap on the button
-     * installs from the already downloaded APK when it is good, so the
-     * owner never waits on a 21 MB download twice. A launch-time
-     * (automatic) check fails silently, as before. A manual check,
-     * from a tap on Update, always says what happened.
+     * button appears with the download link armed, and nothing
+     * downloads until the owner taps it. A tap downloads the APK
+     * (or installs from the already downloaded APK when it is good,
+     * so the owner never waits on a 21 MB download twice). A
+     * launch-time (automatic) check fails silently, as before. A
+     * manual check, from a tap on Update, always says what happened.
      */
     private fun checkForUpdate(manual: Boolean = false) {
         thread {
@@ -1085,11 +1086,9 @@ class MainActivity : Activity() {
                 }
                 updateDownloadUrl = downloadUrl
                 updateVersion = releaseVersion
+                // The update waits for a tap: the button appears and
+                // nothing downloads until the owner taps Update.
                 runOnUiThread { updateButton.visibility = View.VISIBLE }
-                // Already downloaded and verified for this version:
-                // do not download 21 MB again, the tap installs it.
-                if (cachedApkOk(releaseVersion)) return@thread
-                downloadUpdate(downloadUrl, auto = true)
             } catch (e: Exception) {
                 // Offline or any error: an automatic check stays
                 // silent, as before. A manual check says so.
@@ -1143,11 +1142,10 @@ class MainActivity : Activity() {
 
     /** Download the release APK to the cache, then open the installer.
      * A tap never re-downloads a good cached APK: it installs it at
-     * once. Auto downloads fail silently (the Update button stays for
-     * a retry); a manual tap reports the failure in plain words. */
-    private fun downloadUpdate(downloadUrl: String, auto: Boolean = false) {
+     * once. A failed download reports the failure in plain words. */
+    private fun downloadUpdate(downloadUrl: String) {
         if (downloading) {
-            if (!auto) status("Downloading update... please wait.")
+            status("Downloading update... please wait.")
             return
         }
         // A good cached APK for this version installs at once.
@@ -1182,7 +1180,7 @@ class MainActivity : Activity() {
                 downloading = false
                 runOnUiThread {
                     updateButton.text = "Update"
-                    if (!auto) status("Update failed. Try again.")
+                    status("Update failed. Try again.")
                 }
             }
         }
