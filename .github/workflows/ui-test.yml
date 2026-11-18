@@ -88,18 +88,29 @@ jobs:
           profile: pixel_7_pro
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
+          # A freshly installed app is in stopped state and its
+          # service never really binds: dumpsys lists it as Bound
+          # from the package record while no service process exists,
+          # so onServiceConnected never runs and the home screen
+          # stays on "Accessibility off". Launching the app once
+          # before enabling the service clears the stopped state,
+          # and the poll below also requires a live app process
+          # (pidof), not just the dumpsys label. UI Test #34.
           script: |
             export PATH="$HOME/.maestro/bin:$PATH"
             adb wait-for-device
             adb uninstall com.browsermcp || true
             adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -n com.browsermcp/.MainActivity
+            sleep 5
             adb shell settings put secure enabled_accessibility_services com.browsermcp/com.browsermcp.DriveService
             adb shell settings put secure accessibility_enabled 1
             echo "--- accessibility service state ---"
             adb shell settings get secure enabled_accessibility_services
             adb shell settings get secure accessibility_enabled
-            for i in 1 2 3 4 5 6 7 8 9 10 11 12; do if adb shell dumpsys accessibility | grep -qi "AgentPilot driver"; then echo "service BOUND after check $i"; break; fi; sleep 5; done
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12; do if adb shell dumpsys accessibility | grep -qi "AgentPilot driver" && [ -n "$(adb shell pidof com.browsermcp)" ]; then echo "service BOUND after check $i"; break; fi; sleep 5; done
             adb shell dumpsys accessibility | grep -i "browsermcp" || echo "SERVICE NOT FOUND IN DUMPSYS"
+            adb shell pidof com.browsermcp || echo "NO APP PROCESS RUNNING"
             adb shell dumpsys accessibility
             maestro test --test-output-dir maestro-output maestro/agentpilot-flow.yaml || (adb shell dumpsys accessibility; exit 1)
       - name: Show failure hierarchy in log
