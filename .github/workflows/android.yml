@@ -96,7 +96,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.12-${{ github.run_number }}
-          name: AgentPilot v0.6.12 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.12: the ngrok tunnel no longer spins on Connecting forever. If no link appears in 60 seconds, the tunnel stops and the home screen says why: check the key in Help, or try mobile data."
+          tag_name: v0.6.13-${{ github.run_number }}
+          name: AgentPilot v0.6.13 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.13: Continue to Chrome only opens once the tunnel link exists, so it never leads nowhere while the connection is still coming up. Help holds only the five steps now; the tunnel, the connection key and the app settings moved into a new Settings dialog, grouped under Tunnel, Connection key and App. Also fixed: the ngrok tunnel reports after 60 seconds instead of spinning on Connecting forever."
           files: app/build/outputs/apk/debug/app-debug.apk
