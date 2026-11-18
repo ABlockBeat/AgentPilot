@@ -169,6 +169,7 @@ class MainActivity : Activity() {
 
         updateDriveStatus()
         updateMcpUi()
+        maybeAutoStartMcp()
         checkForUpdate()
         webView.loadUrl("https://example.com")
     }
@@ -238,6 +239,33 @@ class MainActivity : Activity() {
             mcpButton.setBackgroundResource(R.drawable.rounded_button_outline)
             mcpButton.setTextColor(getColor(R.color.accent))
         }
+    }
+
+    /**
+     * One-time setup, saved: the target app pick and the Accessibility
+     * switch already stay saved, so the only step the owner had to
+     * repeat was turning MCP on. Now the app does that by itself when
+     * it opens, but only when the setup is already done: a target app
+     * is picked and the Accessibility service is on. Otherwise nothing
+     * starts by itself and the owner sets it up by hand first.
+     * The service may not be bound yet the moment the app opens, so
+     * if it is not there, try once more after a short delay.
+     */
+    private fun maybeAutoStartMcp() {
+        if (mcpOn) return
+        val target = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
+        if (target.isEmpty()) return
+        if (DriveService.instance == null) {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (!mcpOn && DriveService.instance != null) {
+                    startMcp()
+                    updateMcpUi()
+                }
+            }, 1500)
+            return
+        }
+        startMcp()
+        updateMcpUi()
     }
 
     fun regenerateToken(): String {
