@@ -38,7 +38,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.7.
+ * AgentPilot, Android app, version 0.6.8.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -105,6 +105,7 @@ class MainActivity : Activity() {
     private lateinit var updateButton: Button
     private lateinit var continueButton: Button
     private lateinit var shareButton: Button
+    private lateinit var copyButton: Button
     private lateinit var changeButton: Button
     private lateinit var tunnelStatus: TextView
     private lateinit var helpButton: Button
@@ -155,6 +156,7 @@ class MainActivity : Activity() {
         updateButton = findViewById(R.id.updateButton)
         continueButton = findViewById(R.id.continueButton)
         shareButton = findViewById(R.id.shareButton)
+        copyButton = findViewById(R.id.copyButton)
         changeButton = findViewById(R.id.changeButton)
         tunnelStatus = findViewById(R.id.tunnelStatus)
         helpButton = findViewById(R.id.helpButton)
@@ -162,6 +164,7 @@ class MainActivity : Activity() {
         actionButton.setOnClickListener { doNextStep() }
         continueButton.setOnClickListener { openTargetApp() }
         shareButton.setOnClickListener { shareConnection() }
+        copyButton.setOnClickListener { copyConnection() }
         changeButton.setOnClickListener { showAppPicker() }
         tunnelStatus.setOnClickListener { copyTunnelUrl() }
         helpButton.setOnClickListener { showHelp() }
@@ -576,6 +579,10 @@ class MainActivity : Activity() {
                 shareButton.visibility = View.GONE
             }
         }
+        // Copy sits next to Share and shows exactly when Share does:
+        // both need a link, and Copy is the one that works when the
+        // share sheet does not.
+        copyButton.visibility = shareButton.visibility
     }
 
     /** Tap the tunnel status line to copy the public link. */
@@ -592,6 +599,16 @@ class MainActivity : Activity() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("AgentPilot key", token))
         status("Key copied.")
+    }
+
+    /** Copy the tunnel link and the key together, one tap, no share sheet. */
+    private fun copyConnection() {
+        val url = service()?.tunnelUrl ?: return
+        val token = DriveService.storedToken(this)
+        val text = "AgentPilot\nTunnel: $url\nKey: $token"
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("AgentPilot connection", text))
+        status("Link and key copied.")
     }
 
     /** Share the tunnel link and the key together, one tap. */
