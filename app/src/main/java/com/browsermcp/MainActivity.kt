@@ -2,14 +2,18 @@ package com.browsermcp
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.Gravity
@@ -26,12 +30,11 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.UUID
 import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.5.2.
+ * AgentPilot, Android app, version 0.6.0.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -42,9 +45,9 @@ import org.json.JSONObject
  * owner can log in by hand in the real browser, Tunnel, so the
  * owner's agent can reach this phone, and Change app, to switch
  * to another app while staying connected. A small Help button
- * sits at the bottom. Help is a guided flow, not a reading list:
- * every step is a row with a button that does that step right
- * there, one tap, no dead ends.
+ * sits at the bottom, next to Update when one exists. Help is a
+ * guided flow, not a reading list: every step is a row with a
+ * button that does that step right there, one tap, no dead ends.
  *
  * One engine only: DriveService, an AccessibilityService that drives
  * the REAL apps on the phone, the ones the owner already uses and is
@@ -52,12 +55,20 @@ import org.json.JSONObject
  * picks. That is how your agent drives your browser on your phone: no
  * cloud browser, no laptop, no extension.
  *
+ * The connection lives in KeepAliveService, not in this screen.
+ * The MCP server, the tunnel and the action log all belong to the
+ * foreground service, so Back, swipe away, or the system
+ * reclaiming this screen never disconnects anything. This screen
+ * only shows state and sends commands. Back sends the app to the
+ * background instead of finishing it.
+ *
  * The tunnel lives inside the app, in TunnelManager. No Termux, no
  * download, no Play Store, no outside app at any point. The
  * cloudflared binary ships inside the APK and runs from there.
  * Start Tunnel opens the public link to the MCP server on this
  * phone. The tunnel only runs while the app is Running, and only
- * when the owner taps Start.
+ * when the owner taps Start. If it drops while it is wanted, it
+ * restarts by itself.
  *
  * The in-app WebView browser is gone. It was an option that did not
  * do the real work: exchanges detect a WebView and block logins, so
@@ -70,8 +81,9 @@ import org.json.JSONObject
  * - The owner turns the service on by hand in Settings, Accessibility.
  *   He can turn it off any time. Nothing here runs without that switch.
  * - The MCP server on this phone only, with a bearer token, exposes
- *   the 12 drive tools. The owner sees everything on this screen and
- *   can take over at any time with his own hands.
+ *   the 12 drive tools. The token is generated once, saved, and
+ *   shown in Help with tap to copy. The owner sees everything on
+ *   this screen and can take over at any time with his own hands.
  * - Setup is one-time and saved: the target pick and the Accessibility
  *   switch stay saved, and MCP starts by itself when the app opens.
  *   The owner only taps the app and it is ready.
@@ -91,14 +103,37 @@ class MainActivity : Activity() {
     private lateinit var tunnelStatus: TextView
     private lateinit var helpButton: Button
     private var updateDownloadUrl: String = ""
+    private var updateVersion: String = ""
     private lateinit var prefs: SharedPreferences
-    private var mcpServer: McpServer? = null
-    private var token: String = UUID.randomUUID().toString()
-    private val tunnelManager: TunnelManager by lazy { TunnelManager(this) }
-    private var installProgress: Int = 0
-    private var lastTunnelLog: String = ""
-    var mcpOn: Boolean = false
-        private set
+    private var autoStartTries: Int = 0
+    private var autoStartScheduled: Boolean = false
+    private var receiverRegistered: Boolean = false
+
+    /**
+     * Crypto apps stay out of the picker, standing owner order.
+     * The shortlist never had them; the all-apps list keeps the
+     * same exclusion, by package and by name.
+     */
+    private val cryptoPackages = setOf(
+        "com.binance.dev",
+        "com.kubi.kucoin",
+        "com.bitget.exchange",
+        "com.okinc.okex.gp",
+        "com.gateio.gateio",
+        "com.tradingview.tradingviewapp"
+    )
+    private val cryptoLabels = listOf(
+        "binance", "kucoin", "bitget", "okx", "gate.io", "tradingview",
+        "bybit", "coinbase", "kraken"
+    )
+
+    private val stateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            updateUi()
+            val error = intent?.getStringExtra(KeepAliveService.EXTRA_ERROR)
+            if (!error.isNullOrEmpty()) status(error)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -126,6 +161,10 @@ class MainActivity : Activity() {
             if (updateDownloadUrl.isNotEmpty()) downloadUpdate(updateDownloadUrl)
         }
 
+        // The connection key is generated once, the first time the
+        // app runs, and saved. It never changes on its own.
+        DriveService.storedToken(this)
+
         updateUi()
         maybeAutoStartMcp()
         checkForUpdate()
@@ -133,35 +172,67 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // The owner may have toggled the service in Settings. Refresh.
+        if (!receiverRegistered) {
+            registerReceiver(stateReceiver, IntentFilter(KeepAliveService.ACTION_STATE_CHANGED))
+            receiverRegistered = true
+        }
+        // The owner may have toggled the service in Settings. Refresh,
+        // and give the auto-start a fresh chance to catch the bind.
+        autoStartTries = 0
         updateUi()
+        maybeAutoStartMcp()
+    }
+
+    override fun onPause() {
+        if (receiverRegistered) {
+            try { unregisterReceiver(stateReceiver) } catch (e: Exception) { }
+            receiverRegistered = false
+        }
+        super.onPause()
+    }
+
+    /**
+     * Back sends the app to the background instead of finishing it.
+     * The session stays connected while the owner goes back.
+     */
+    override fun onBackPressed() {
+        moveTaskToBack(true)
+    }
+
+    override fun onDestroy() {
+        // Nothing to stop here on purpose: the session belongs to the
+        // foreground service and survives this screen going away. It
+        // only stops when the owner taps Disconnect.
+        super.onDestroy()
     }
 
     fun status(text: String) {
         runOnUiThread { Toast.makeText(this, text, Toast.LENGTH_SHORT).show() }
     }
 
-    private fun startMcp() {
-        mcpServer = McpServer(this, token).also { it.start() }
-        mcpOn = true
-        // Keep the process alive while MCP is on, so the server keeps
-        // answering while the owner uses the target app in front.
-        val keepAlive = Intent(this, KeepAliveService::class.java)
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    /** The session, if the service is up. Null means no session. */
+    private fun service(): KeepAliveService? = KeepAliveService.instance
+
+    private fun sessionRunning(): Boolean = service()?.sessionRunning == true
+
+    private fun sendServiceAction(action: String) {
+        val intent = Intent(this, KeepAliveService::class.java).setAction(action)
         if (Build.VERSION.SDK_INT >= 26) {
-            startForegroundService(keepAlive)
+            startForegroundService(intent)
         } else {
-            startService(keepAlive)
+            startService(intent)
         }
+    }
+
+    private fun startMcp() {
+        sendServiceAction(KeepAliveService.ACTION_START_SESSION)
         updateUi()
     }
 
     private fun stopMcp() {
-        tunnelManager.stop()
-        lastTunnelLog = ""
-        mcpServer?.stop()
-        mcpServer = null
-        mcpOn = false
-        stopService(Intent(this, KeepAliveService::class.java))
+        sendServiceAction(KeepAliveService.ACTION_STOP_SESSION)
         updateUi()
     }
 
@@ -179,6 +250,7 @@ class MainActivity : Activity() {
     private fun updateUi() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
         val a11yOn = DriveService.instance != null
+        val running = sessionRunning()
         when {
             target.isEmpty() -> {
                 statusText.text = "Not set up"
@@ -192,7 +264,7 @@ class MainActivity : Activity() {
                 statusDot.setBackgroundResource(R.drawable.dot_amber)
                 actionButton.text = "Turn on Accessibility"
             }
-            mcpOn -> {
+            running -> {
                 statusText.text = "$target · Running"
                 statusText.setTextColor(getColor(R.color.accent))
                 statusDot.setBackgroundResource(R.drawable.dot_green)
@@ -226,7 +298,7 @@ class MainActivity : Activity() {
         when {
             target.isEmpty() -> showAppPicker()
             !a11yOn -> openA11ySettings()
-            mcpOn -> stopMcp()
+            sessionRunning() -> stopMcp()
             else -> startMcp()
         }
     }
@@ -239,33 +311,34 @@ class MainActivity : Activity() {
      * is picked and the Accessibility service is on. Otherwise nothing
      * starts by itself and the owner sets it up by hand first.
      * The service may not be bound yet the moment the app opens, so
-     * if it is not there, try once more after a short delay.
+     * it tries a few times with a longer window instead of once.
      */
     private fun maybeAutoStartMcp() {
-        if (mcpOn) return
+        if (sessionRunning()) return
         val target = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
         if (target.isEmpty()) return
-        if (DriveService.instance == null) {
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                if (!mcpOn && DriveService.instance != null) {
-                    startMcp()
-                    updateUi()
-                }
-            }, 1500)
+        if (DriveService.instance != null) {
+            autoStartTries = 0
+            startMcp()
             return
         }
-        startMcp()
-        updateUi()
+        if (autoStartTries >= 3 || autoStartScheduled) return
+        autoStartTries++
+        autoStartScheduled = true
+        val delay = longArrayOf(1500L, 4000L, 8000L)[autoStartTries - 1]
+        Handler(Looper.getMainLooper()).postDelayed({
+            autoStartScheduled = false
+            if (!sessionRunning()) maybeAutoStartMcp()
+        }, delay)
     }
-
-    fun regenerateToken(): String {
-        token = UUID.randomUUID().toString()
-        return token
-    }
-
-    fun currentToken(): String = token
 
     // ---- Target app picker and Accessibility settings ----
+
+    private fun isCryptoApp(pkg: String, label: String): Boolean {
+        if (pkg in cryptoPackages) return true
+        val lower = label.lowercase()
+        return cryptoLabels.any { lower.contains(it) }
+    }
 
     /**
      * The owner picks ONE app your agent may drive. The picker shows
@@ -274,20 +347,22 @@ class MainActivity : Activity() {
      * short last row is centered too, never left hanging. Only the
      * important apps are listed, Chrome first, and only those that
      * are actually installed. No crypto apps are listed at all, by
-     * the owner's order. If none of them is installed, every
-     * launchable app is shown instead so the picker is never empty.
-     * Tap an app and it is picked at once, the picker closes, no
-     * extra button to tap. Android 11 and newer hide most installed
-     * apps from queryIntentActivities unless QUERY_ALL_PACKAGES is
-     * declared in the manifest, so that permission is declared
-     * there. The app itself is never listed, it cannot drive
-     * itself. The choice is saved and can be changed any time by
-     * picking again. Picking a new app while Running switches the
-     * target at once, no restart: DriveService reads the target
-     * from prefs on every action, so MCP keeps running and the
-     * status line updates to the new app.
+     * the owner's order. "Show all apps" at the end lists every
+     * launchable app instead, still without the crypto ones, so the
+     * owner can pick any other app too. If none of the five is
+     * installed, every launchable app is shown instead so the picker
+     * is never empty. Tap an app and it is picked at once, the picker
+     * closes, no extra button to tap. Android 11 and newer hide most
+     * installed apps from queryIntentActivities unless
+     * QUERY_ALL_PACKAGES is declared in the manifest, so that
+     * permission is declared there. The app itself is never listed,
+     * it cannot drive itself. The choice is saved and can be changed
+     * any time by picking again. Picking a new app while Running
+     * switches the target at once, no restart: DriveService reads
+     * the target from prefs on every action, so MCP keeps running
+     * and the status line updates to the new app.
      */
-    private fun showAppPicker() {
+    private fun showAppPicker(showAll: Boolean = false) {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val installed = packageManager.queryIntentActivities(intent, 0)
             .filter { it.activityInfo.packageName != packageName }
@@ -301,13 +376,13 @@ class MainActivity : Activity() {
         val picked = important.mapNotNull { pkg ->
             installed.firstOrNull { it.activityInfo.packageName == pkg }
         }
-        val apps = if (picked.isEmpty()) {
-            installed.sortedBy { it.loadLabel(packageManager).toString().lowercase() }
-        } else {
-            picked
+        val apps = when {
+            showAll -> installed
+                .filter { !isCryptoApp(it.activityInfo.packageName, it.loadLabel(packageManager).toString()) }
+                .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+            picked.isEmpty() -> installed.sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+            else -> picked
         }
-        val density = resources.displayMetrics.density
-        val dp = { v: Int -> (v * density).toInt() }
         lateinit var dialog: AlertDialog
         fun cellView(position: Int): LinearLayout {
             val cell = LinearLayout(this).apply {
@@ -358,6 +433,26 @@ class MainActivity : Activity() {
             }
             rows.addView(row)
         }
+        if (!showAll) {
+            val allButton = Button(this).apply {
+                text = "Show all apps"
+                textSize = 15f
+                setBackgroundResource(R.drawable.rounded_button_outline)
+                setTextColor(getColor(R.color.accent))
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(12)
+                }
+                setOnClickListener {
+                    dialog.dismiss()
+                    showAppPicker(true)
+                }
+            }
+            rows.addView(allButton)
+        }
         val scroll = ScrollView(this).apply { addView(rows) }
         dialog = AlertDialog.Builder(this)
             .setTitle("Pick an app")
@@ -401,103 +496,45 @@ class MainActivity : Activity() {
     }
 
     /**
-     * The Tunnel button does whatever the tunnel needs next, one tap:
-     * check it, start it, or stop it. It only works while the app
-     * is Running, because the MCP server must be listening on 8765
-     * first. Otherwise a short toast says to tap Start first.
+     * The Tunnel button does whatever the tunnel needs next, one tap.
+     * If the session is off, the service starts it first, so one tap
+     * connects everything. Otherwise it stops the tunnel.
      */
     private fun onTunnelButton() {
-        when {
-            tunnelManager.running -> {
-                tunnelManager.stop()
-                lastTunnelLog = ""
-                updateTunnelUi()
-                status("Tunnel stopped.")
-            }
-            tunnelManager.installing -> {
-                // Button is disabled while installing, nothing to do.
-            }
-            !mcpOn -> status("Tap Start first, then tap Tunnel.")
-            !tunnelManager.installed -> installTunnel()
-            else -> startTunnel()
+        if (service()?.tunnelRunning == true) {
+            sendServiceAction(KeepAliveService.ACTION_STOP_TUNNEL)
+            status("Tunnel stopped.")
+        } else {
+            sendServiceAction(KeepAliveService.ACTION_START_TUNNEL)
         }
-    }
-
-    /**
-     * One tap checks the tunnel binary that ships inside the app and
-     * verifies it runs. When the check finishes, the tunnel starts
-     * by itself, so the owner does not have to tap again.
-     */
-    private fun installTunnel() {
-        installProgress = 0
-        updateTunnelUi()
-        tunnelManager.install(
-            onProgress = { pct ->
-                installProgress = pct
-                updateTunnelUi()
-            },
-            onDone = {
-                installProgress = 100
-                status("Tunnel ready. Starting it now.")
-                updateTunnelUi()
-                startTunnel()
-            },
-            onError = { msg ->
-                status("Tunnel install failed: $msg")
-                updateTunnelUi()
-            }
-        )
-    }
-
-    /** Start the tunnel to the local MCP server, if the app is Running. */
-    private fun startTunnel() {
-        if (!mcpOn) {
-            status("Tap Start first, then tap Tunnel.")
-            return
-        }
-        updateTunnelUi()
-        tunnelManager.start(
-            onUrl = {
-                lastTunnelLog = ""
-                status("Tunnel is on. Tap the link to copy it.")
-                updateTunnelUi()
-            },
-            onLog = { line ->
-                lastTunnelLog = line
-                updateTunnelUi()
-            },
-            onStopped = { updateTunnelUi() },
-            onError = { msg ->
-                status("Tunnel failed: $msg")
-                updateTunnelUi()
-            }
-        )
+        updateUi()
     }
 
     /**
      * The Tunnel button label and the small tunnel status line always
-     * show the true state: installing with percent, running with the
-     * public link and the last tunnel output line, or idle. The
-     * status line is a tiny terminal-style view, two lines at most,
-     * visible only while the tunnel is installing or running.
+     * show the true state. The status line shows the public link
+     * only, or one short line while it starts or reconnects. No raw
+     * tunnel output on the home screen.
      */
     private fun updateTunnelUi() {
+        val svc = service()
+        val installing = svc?.tunnelInstalling == true
+        val running = svc?.tunnelRunning == true
         when {
-            tunnelManager.installing -> {
+            installing -> {
                 tunnelButton.isEnabled = false
-                tunnelButton.text = "Installing… $installProgress%"
+                tunnelButton.text = "Installing…"
                 tunnelStatus.visibility = View.VISIBLE
-                tunnelStatus.text = "Installing tunnel… $installProgress%"
+                tunnelStatus.text = "Checking tunnel…"
             }
-            tunnelManager.running -> {
+            running -> {
                 tunnelButton.isEnabled = true
                 tunnelButton.text = "Stop Tunnel"
                 tunnelStatus.visibility = View.VISIBLE
-                val url = tunnelManager.publicUrl
-                tunnelStatus.text = if (url != null) {
-                    if (lastTunnelLog.isNotEmpty()) "$url\n$lastTunnelLog" else url
+                tunnelStatus.text = if (svc?.tunnelRestarting == true) {
+                    "Reconnecting…"
                 } else {
-                    "Starting tunnel…"
+                    svc?.tunnelUrl ?: "Starting tunnel…"
                 }
             }
             else -> {
@@ -510,10 +547,84 @@ class MainActivity : Activity() {
 
     /** Tap the tunnel status line to copy the public link. */
     private fun copyTunnelUrl() {
-        val url = tunnelManager.publicUrl ?: return
+        val url = service()?.tunnelUrl ?: return
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("AgentPilot tunnel", url))
         status("Tunnel link copied.")
+    }
+
+    /** Copy the connection key to the clipboard. */
+    private fun copyToken() {
+        val token = DriveService.storedToken(this)
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("AgentPilot key", token))
+        status("Key copied.")
+    }
+
+    /** Share the tunnel link and the key together, one tap. */
+    private fun shareConnection() {
+        val url = service()?.tunnelUrl ?: return
+        val token = DriveService.storedToken(this)
+        val text = "AgentPilot\nTunnel: $url\nKey: $token"
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(intent, "Share connection"))
+    }
+
+    /** Ask the local server for its tools. Connected or not, plainly. */
+    private fun testConnection() {
+        thread {
+            val ok = try {
+                val conn = URL("http://127.0.0.1:8765/mcp").openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Authorization", "Bearer " + DriveService.storedToken(this))
+                conn.doOutput = true
+                val payload = """{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"""
+                conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+                val body = if (code == 200) conn.inputStream.bufferedReader().use { it.readText() } else ""
+                code == 200 && body.contains("\"tools\"")
+            } catch (e: Exception) {
+                false
+            }
+            runOnUiThread { status(if (ok) "Connected." else "Not connected.") }
+        }
+    }
+
+    /** Open the battery settings, so the owner can exempt the app. */
+    private fun openBatterySettings() {
+        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    }
+
+    /** A new connection key. The old one stops working at once. */
+    private fun newTokenFlow() {
+        DriveService.newToken(this)
+        status("New key saved. Share it again.")
+        if (sessionRunning()) {
+            sendServiceAction(KeepAliveService.ACTION_RESTART_SERVER)
+        }
+    }
+
+    /** The log of what the agent did, newest first. */
+    private fun showActionLog() {
+        val lines = service()?.actionLogSnapshot() ?: emptyList()
+        val logView = TextView(this).apply {
+            text = if (lines.isEmpty()) "Nothing yet." else lines.joinToString("\n")
+            textSize = 13f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        val scroll = ScrollView(this).apply { addView(logView) }
+        AlertDialog.Builder(this)
+            .setTitle("What the agent did")
+            .setView(scroll)
+            .setPositiveButton("Close", null)
+            .show()
     }
 
     /**
@@ -528,8 +639,8 @@ class MainActivity : Activity() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
         val hasTarget = target.isNotEmpty()
         val a11yOn = DriveService.instance != null
-        val density = resources.displayMetrics.density
-        val dp = { v: Int -> (v * density).toInt() }
+        val running = sessionRunning()
+        val svc = service()
         lateinit var dialog: AlertDialog
         fun helpRow(stepText: String, buttonText: String, enabled: Boolean, action: () -> Unit): LinearLayout {
             val row = LinearLayout(this).apply {
@@ -575,7 +686,7 @@ class MainActivity : Activity() {
         body.addView(helpRow("2. Turn on Accessibility for AgentPilot.", "Open Settings", true) {
             openA11ySettings()
         })
-        body.addView(helpRow("3. Start the app.", "Start", hasTarget && a11yOn && !mcpOn) {
+        body.addView(helpRow("3. Start the app.", "Start", hasTarget && a11yOn && !running) {
             startMcp()
         })
         val continueLabel = if (target == "Chrome") "Continue to Chrome" else "Open $target"
@@ -583,19 +694,58 @@ class MainActivity : Activity() {
             openTargetApp()
         })
         val tunnelLabel = when {
-            tunnelManager.running -> "Stop Tunnel"
-            tunnelManager.installing -> "Installing…"
-            tunnelManager.installed -> "Start Tunnel"
+            svc?.tunnelRunning == true -> "Stop Tunnel"
+            svc?.tunnelInstalling == true -> "Installing…"
             else -> "Start Tunnel"
         }
-        body.addView(helpRow("5. Tunnel: connect your agent to this phone.", tunnelLabel, !tunnelManager.installing) {
+        body.addView(helpRow("5. Tunnel: connect your agent to this phone.", tunnelLabel, svc?.tunnelInstalling != true) {
             onTunnelButton()
         })
+        // The connection key, shown in full, tap to copy. The agent
+        // needs this key together with the tunnel link.
+        val keyLabel = TextView(this).apply {
+            text = "Connection key (tap to copy):"
+            textSize = 14f
+            setTextColor(getColor(R.color.secondary))
+            setPadding(dp(0), dp(12), dp(0), dp(4))
+        }
+        body.addView(keyLabel)
+        val tokenView = TextView(this).apply {
+            text = DriveService.storedToken(this@MainActivity)
+            textSize = 12f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextColor(getColor(R.color.text))
+            setPadding(dp(0), dp(0), dp(0), dp(4))
+            setOnClickListener { copyToken() }
+        }
+        body.addView(tokenView)
+        body.addView(helpRow("Share the connection (link + key).", "Share", svc?.tunnelUrl != null) {
+            shareConnection()
+        })
+        body.addView(helpRow("See what the agent did.", "View", true) {
+            showActionLog()
+        })
+        body.addView(helpRow("Test the connection.", "Test", running) {
+            testConnection()
+        })
+        body.addView(helpRow("Keep the app running when the screen is off.", "Battery settings", true) {
+            openBatterySettings()
+        })
+        body.addView(helpRow("New connection key. The old one stops working.", "New key", true) {
+            newTokenFlow()
+        })
+        val versionView = TextView(this).apply {
+            text = "AgentPilot " + currentVersionName()
+            textSize = 13f
+            setTextColor(getColor(R.color.secondary))
+            setPadding(dp(0), dp(12), dp(0), dp(0))
+        }
+        body.addView(versionView)
         val done = TextView(this).apply {
             text = "Tap Disconnect on the home screen when you are done."
             textSize = 14f
             setTextColor(getColor(R.color.secondary))
-            setPadding(dp(0), dp(12), dp(0), dp(4))
+            setPadding(dp(0), dp(4), dp(0), dp(4))
         }
         body.addView(done)
         val scroll = ScrollView(this).apply { addView(body) }
@@ -606,44 +756,16 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
-    // ---- The 12 drive tools, real apps via DriveService ----
-
-    private fun drive(): DriveService =
-        DriveService.instance
-            ?: throw RuntimeException("Accessibility service is off. Turn it on in Settings, Accessibility, AgentPilot.")
-
-    fun driveTapText(text: String): Map<String, Any> = drive().tapText(text)
-
-    fun driveTapCoords(x: Int, y: Int): Map<String, Any> = drive().tapCoords(x, y)
-
-    fun driveTypeText(field: String, text: String): Map<String, Any> = drive().typeText(field, text)
-
-    fun driveScroll(direction: String, steps: Int): Map<String, Any> = drive().scroll(direction, steps)
-
-    fun driveSwipe(x1: Int, y1: Int, x2: Int, y2: Int, ms: Int): Map<String, Any> =
-        drive().swipe(x1, y1, x2, y2, ms)
-
-    fun driveScreenshot(): String = drive().screenshot()
-
-    fun driveScreenText(): Map<String, Any> = drive().screenText()
-
-    fun driveOpenApp(packageName: String): Map<String, Any> = drive().openApp(packageName)
-
-    fun driveOpenUrl(url: String): Map<String, Any> = drive().openUrl(url)
-
-    fun drivePressBack(): Map<String, Any> = drive().pressBack()
-
-    fun drivePressHome(): Map<String, Any> = drive().pressHome()
-
-    fun driveWaitForOwner(marker: String, timeoutSeconds: Int): Map<String, Any> =
-        drive().waitForOwner(marker, timeoutSeconds)
-
     // ---- In-app update: check GitHub releases, download, install ----
 
     /**
      * Check the latest public release on GitHub, in a background thread.
-     * If it is newer than this app, show the Update button. Fails
-     * silently when offline, never blocks the UI, never auto-downloads.
+     * If it is newer than this app, the update downloads by itself in the
+     * background and the installer opens on its own, so the owner never
+     * downloads an update by hand. The one tap Android still needs is the
+     * system Install dialog: a sideloaded app cannot install silently.
+     * If that install is dismissed, the Update button stays for a retry.
+     * Fails silently when offline, never blocks the UI.
      */
     private fun checkForUpdate() {
         thread {
@@ -672,7 +794,15 @@ class MainActivity : Activity() {
                 }
                 if (downloadUrl.isEmpty()) return@thread
                 updateDownloadUrl = downloadUrl
+                updateVersion = releaseVersion
+                val cachedVersion = prefs.getString("updateCachedVersion", "") ?: ""
+                val installerShown = prefs.getString("updateInstallerShown", "") ?: ""
+                val cachedApk = File(cacheDir, "update.apk")
                 runOnUiThread { updateButton.visibility = View.VISIBLE }
+                // Already downloaded and the installer was already shown
+                // once for this version: leave the button for a manual retry.
+                if (cachedApk.exists() && cachedVersion == releaseVersion && installerShown == releaseVersion) return@thread
+                downloadUpdate(downloadUrl, auto = true)
             } catch (e: Exception) {
                 // Offline or any error: no Update button, nothing shown.
             }
@@ -701,8 +831,10 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Download the release APK to the cache, then open the installer. */
-    private fun downloadUpdate(downloadUrl: String) {
+    /** Download the release APK to the cache, then open the installer.
+     * Auto downloads fail silently (the Update button stays for a retry);
+     * a manual tap reports the failure in plain words. */
+    private fun downloadUpdate(downloadUrl: String, auto: Boolean = false) {
         updateButton.isEnabled = false
         updateButton.text = "Downloading..."
         thread {
@@ -716,12 +848,16 @@ class MainActivity : Activity() {
                 conn.inputStream.use { input ->
                     FileOutputStream(apkFile).use { output -> input.copyTo(output) }
                 }
+                prefs.edit()
+                    .putString("updateCachedVersion", updateVersion)
+                    .putString("updateInstallerShown", updateVersion)
+                    .apply()
                 runOnUiThread { installApk(apkFile) }
             } catch (e: Exception) {
                 runOnUiThread {
                     updateButton.isEnabled = true
                     updateButton.text = "Update"
-                    status("Update failed: " + (e.message ?: "error"))
+                    if (!auto) status("Update failed. Try again.")
                 }
             }
         }
@@ -736,10 +872,5 @@ class MainActivity : Activity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(intent)
-    }
-
-    override fun onDestroy() {
-        stopMcp()
-        super.onDestroy()
     }
 }
