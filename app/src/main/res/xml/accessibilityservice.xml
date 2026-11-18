@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Browser MCP drive engine, version 0.4.0.
+<!-- AgentPilot drive engine, version 0.4.2.
      The service drives the one app the owner picks. It reads the screen
      to find buttons and fields, taps and types in them, and takes
      screenshots. It never reads or types passwords. The owner turns it
