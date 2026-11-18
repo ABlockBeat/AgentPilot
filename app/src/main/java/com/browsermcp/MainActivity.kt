@@ -31,16 +31,17 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.5.0.
+ * AgentPilot, Android app, version 0.5.1.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
- * the next step: set up, turn on Accessibility, start, stop.
+ * the next step: set up, turn on Accessibility, start, disconnect.
  *
- * Once a target app is picked, two small buttons appear under
+ * Once a target app is picked, three small buttons appear under
  * the main button, and only then: Continue to Chrome, so the
- * owner can log in by hand in the real browser, and Tunnel, so
- * the owner's agent can reach this phone. A small Help button
+ * owner can log in by hand in the real browser, Tunnel, so the
+ * owner's agent can reach this phone, and Change app, to switch
+ * to another app while staying connected. A small Help button
  * sits at the bottom. Help is a guided flow, not a reading list:
  * every step is a row with a button that does that step right
  * there, one tap, no dead ends.
@@ -87,6 +88,7 @@ class MainActivity : Activity() {
     private lateinit var updateButton: Button
     private lateinit var continueButton: Button
     private lateinit var tunnelButton: Button
+    private lateinit var changeButton: Button
     private lateinit var tunnelStatus: TextView
     private lateinit var helpButton: Button
     private var updateDownloadUrl: String = ""
@@ -110,12 +112,14 @@ class MainActivity : Activity() {
         updateButton = findViewById(R.id.updateButton)
         continueButton = findViewById(R.id.continueButton)
         tunnelButton = findViewById(R.id.tunnelButton)
+        changeButton = findViewById(R.id.changeButton)
         tunnelStatus = findViewById(R.id.tunnelStatus)
         helpButton = findViewById(R.id.helpButton)
 
         actionButton.setOnClickListener { doNextStep() }
         continueButton.setOnClickListener { openTargetApp() }
         tunnelButton.setOnClickListener { onTunnelButton() }
+        changeButton.setOnClickListener { showAppPicker() }
         tunnelStatus.setOnClickListener { copyTunnelUrl() }
         helpButton.setOnClickListener { showHelp() }
 
@@ -165,11 +169,12 @@ class MainActivity : Activity() {
     /**
      * One status line and one button, the whole interface. The
      * button always does the next step, so there is nothing to
-     * figure out: set up, turn on Accessibility, start, stop.
-     * Once a target app is picked, two small buttons appear under
+     * figure out: set up, turn on Accessibility, start, disconnect.
+     * Once a target app is picked, three small buttons appear under
      * the main button: Continue to Chrome, to log in by hand in
-     * the real browser, and Tunnel, to connect the agent to this
-     * phone. Before a target is picked they stay hidden, so the
+     * the real browser, Tunnel, to connect the agent to this
+     * phone, and Change app, to switch the target while staying
+     * connected. Before a target is picked they stay hidden, so the
      * home screen stays minimal.
      */
     private fun updateUi() {
@@ -192,7 +197,7 @@ class MainActivity : Activity() {
                 statusText.text = "$target · Running"
                 statusText.setTextColor(getColor(R.color.accent))
                 statusDot.setBackgroundResource(R.drawable.dot_green)
-                actionButton.text = "Stop"
+                actionButton.text = "Disconnect"
             }
             else -> {
                 statusText.text = "$target · Ready"
@@ -201,12 +206,14 @@ class MainActivity : Activity() {
                 actionButton.text = "Start"
             }
         }
-        // The two small buttons only exist once a target is picked.
+        // The three small buttons only exist once a target is picked.
         // Continue to Chrome is the next step after Running: log in
         // by hand. Then Tunnel connects the agent to this phone.
+        // Change app switches the target while staying connected.
         val hasTarget = target.isNotEmpty()
         continueButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
         tunnelButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
+        changeButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
         if (hasTarget) {
             continueButton.text = if (target == "Chrome") "Continue to Chrome" else "Open $target"
         }
@@ -276,7 +283,10 @@ class MainActivity : Activity() {
      * declared in the manifest, so that permission is declared
      * there. The app itself is never listed, it cannot drive
      * itself. The choice is saved and can be changed any time by
-     * picking again.
+     * picking again. Picking a new app while Running switches the
+     * target at once, no restart: DriveService reads the target
+     * from prefs on every action, so MCP keeps running and the
+     * status line updates to the new app.
      */
     private fun showAppPicker() {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
@@ -588,7 +598,7 @@ class MainActivity : Activity() {
             onTunnelButton()
         })
         val done = TextView(this).apply {
-            text = "Tap Stop on the home screen when you are done."
+            text = "Tap Disconnect on the home screen when you are done."
             textSize = 14f
             setTextColor(getColor(R.color.secondary))
             setPadding(dp(0), dp(12), dp(0), dp(4))
