@@ -13,7 +13,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * ngrok tunnel for AgentPilot, version 0.6.12.
+ * ngrok tunnel for AgentPilot, version 0.6.13.
  *
  * The second tunnel, for phones where Cloudflare does not start.
  * ngrok is free with an account: the owner signs up once at
@@ -212,7 +212,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
      * poll watches only the process it started with, so a restart
      * in between cannot make it kill the new process.
      */
-    private fun pollLocalApi(onUrl: (String) -> Unit) {
+    private fun pollLocalApi(onUrl: (String) -> Unit, onError: (String) -> Unit) {
         val myProc = process
         thread {
             var tries = 0
@@ -260,7 +260,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
                 process = proc
                 urlSent = false
                 timeoutReported = false
-                pollLocalApi(onUrl)
+                pollLocalApi(onUrl, onError)
                 var lastLine = ""
                 proc.inputStream.bufferedReader().useLines { lines ->
                     for (line in lines) {
