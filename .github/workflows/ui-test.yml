@@ -92,6 +92,14 @@ jobs:
             adb shell settings put secure enabled_accessibility_services com.browsermcp/com.browsermcp.DriveService
             adb shell settings put secure accessibility_enabled 1
             maestro test --test-output-dir maestro-output maestro/agentpilot-flow.yaml
+      - name: Show failure hierarchy in log
+        # The Maestro step prints only the failed assertion, never what
+        # was actually on screen. Dump the debug hierarchy into the log
+        # itself, so the next failure says what the emulator showed.
+        if: always()
+        run: |
+          ls -R maestro-output || true
+          for f in $(find maestro-output -name "*.xml" -o -name "*.txt" 2>/dev/null); do echo "== $f"; head -c 6000 "$f"; echo; done
       - name: Upload Maestro output
         # Always runs, even when the flow fails, so the screenshots
         # are there to look at either way.
