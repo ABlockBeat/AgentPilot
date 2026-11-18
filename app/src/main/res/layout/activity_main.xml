@@ -125,6 +125,16 @@
             android:textSize="15sp" />
 
         <Button
+            android:id="@+id/settingsButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:minHeight="40dp"
+            android:text="Settings"
+            android:textColor="@color/secondary"
+            android:textSize="15sp" />
+
+        <Button
             android:id="@+id/shareButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
