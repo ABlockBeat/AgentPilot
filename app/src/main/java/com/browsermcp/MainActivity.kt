@@ -197,7 +197,8 @@ class MainActivity : Activity() {
      * grid, 3 apps in a row, each with its official icon and name, so
      * the list is short and there is little scrolling. Only the
      * important apps are listed, Chrome first, and only those that
-     * are actually installed. If none of them is installed, every
+     * are actually installed. No crypto apps are listed at all, by
+     * the owner's order. If none of them is installed, every
      * launchable app is shown instead so the picker is never empty.
      * Android 11 and newer hide most installed apps from
      * queryIntentActivities unless QUERY_ALL_PACKAGES is declared in
@@ -211,11 +212,6 @@ class MainActivity : Activity() {
             .filter { it.activityInfo.packageName != packageName }
         val important = listOf(
             "com.android.chrome",
-            "com.kubi.kucoin",
-            "com.bitget.exchange",
-            "com.okx.app",
-            "com.gateio.gateio",
-            "com.binance.dev",
             "com.tradingview.tradingviewapp",
             "org.telegram.messenger",
             "com.twitter.android",
