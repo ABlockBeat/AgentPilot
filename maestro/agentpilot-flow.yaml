@@ -28,6 +28,9 @@ name: AgentPilot UI test
 - launchApp:
     clearState: true
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Not set up"
+    timeout: 20000
 - assertVisible: "AgentPilot"
 - assertVisible: "Not set up"
 - takeScreenshot: home-fresh-install
