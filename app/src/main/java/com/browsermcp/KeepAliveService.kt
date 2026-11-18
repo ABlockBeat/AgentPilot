@@ -17,7 +17,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * AgentPilot, session owner, version 0.6.6.
+ * AgentPilot, session owner, version 0.6.7.
  *
  * This service owns the whole connection: the MCP server, the
  * tunnel, and the log of what the agent did. It is a started
@@ -63,6 +63,9 @@ class KeepAliveService : Service() {
         const val ACTION_RESTART_SERVER = "com.browsermcp.RESTART_SERVER"
         const val EXTRA_ERROR = "error"
         const val KEY_SESSION_WANTED = "session_wanted"
+        const val KEY_TUNNEL_BACKEND = "tunnel_backend"
+        const val KEY_NGROK_TOKEN = "ngrok_token"
+        const val KEY_FLOATING_WINDOW = "floating_window"
 
         @Volatile
         var instance: KeepAliveService? = null
@@ -74,18 +77,26 @@ class KeepAliveService : Service() {
     private lateinit var notificationManager: NotificationManager
     private var mcpServer: McpServer? = null
     private val tunnelManager: TunnelManager by lazy { TunnelManager(this) }
+    private val ngrokManager: NgrokManager by lazy { NgrokManager(this) }
+    private val floatingOverlay: FloatingOverlay by lazy { FloatingOverlay(this) }
     private val actionLog = ArrayDeque<String>()
 
     @Volatile var sessionRunning: Boolean = false
         private set
     @Volatile var a11yDead: Boolean = false
         private set
+    @Volatile private var lastTunnelLine: String = ""
 
-    val tunnelRunning: Boolean get() = tunnelManager.running
-    val tunnelInstalling: Boolean get() = tunnelManager.installing
-    val tunnelInstalled: Boolean get() = tunnelManager.installed
-    val tunnelRestarting: Boolean get() = tunnelManager.restarting
-    val tunnelUrl: String? get() = tunnelManager.publicUrl
+    /** Cloudflare is the default; ngrok is the alternative. */
+    private fun activeTunnel(): TunnelBackend =
+        if (prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "ngrok") ngrokManager else tunnelManager
+
+    val tunnelRunning: Boolean get() = activeTunnel().running
+    val tunnelInstalling: Boolean get() = activeTunnel().installing
+    val tunnelInstalled: Boolean get() = activeTunnel().installed
+    val tunnelRestarting: Boolean get() = activeTunnel().restarting
+    val tunnelUrl: String? get() = activeTunnel().publicUrl
+    val tunnelLastLine: String get() = lastTunnelLine
 
     /** The action log, newest first, for the Help screen. */
     fun actionLogSnapshot(): List<String> = synchronized(actionLog) { actionLog.toList() }
@@ -149,6 +160,8 @@ class KeepAliveService : Service() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(watchdogRunnable)
         tunnelManager.stop()
+        ngrokManager.stop()
+        floatingOverlay.hide()
         mcpServer?.stop()
         mcpServer = null
         sessionRunning = false
@@ -194,11 +207,13 @@ class KeepAliveService : Service() {
         // One tap connects everything: the tunnel starts by itself
         // with the session, no separate step for the owner.
         startTunnelFlow()
+        updateFloatingOverlay()
     }
 
     private fun stopSession() {
         mainHandler.removeCallbacks(watchdogRunnable)
         tunnelManager.stop()
+        ngrokManager.stop()
         mcpServer?.stop()
         mcpServer = null
         sessionRunning = false
@@ -234,12 +249,21 @@ class KeepAliveService : Service() {
      * when the session starts, so the owner never taps a tunnel
      * button. If the session is off, it starts first, then the
      * tunnel. The tunnel check runs, then the tunnel starts.
+     * ngrok needs a key saved first: without it the error says
+     * so in plain words instead of failing silently.
      */
     private fun startTunnelFlow() {
         if (!sessionRunning) startSession()
         if (!sessionRunning) return
-        if (tunnelManager.running || tunnelManager.installing) return
-        tunnelManager.install(
+        val tunnel = activeTunnel()
+        if (tunnel.running || tunnel.installing) return
+        if (prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "ngrok" &&
+            prefs.getString(KEY_NGROK_TOKEN, "").isNullOrEmpty()
+        ) {
+            onTunnelError("ngrok needs a key. Add it in Help.")
+            return
+        }
+        tunnel.install(
             onProgress = { },
             onDone = { launchTunnel() },
             onError = { raw -> onTunnelError(raw) }
@@ -248,27 +272,32 @@ class KeepAliveService : Service() {
     }
 
     private fun launchTunnel() {
-        tunnelManager.start(
+        activeTunnel().start(
             onUrl = {
                 logAction("Tunnel started")
+                updateFloatingOverlay()
                 broadcastState()
             },
-            onLog = { },
+            onLog = { line -> lastTunnelLine = line },
             onStopped = { broadcastState() },
             onError = { raw -> onTunnelError(raw) }
         )
     }
 
+    /** Stop every tunnel backend, so a switch never leaves one running. */
     private fun stopTunnel() {
         tunnelManager.stop()
+        ngrokManager.stop()
         broadcastState()
     }
 
     /**
      * A tunnel failure in plain words for the owner. The raw detail
-     * goes in the action log only, never on his screen.
+     * goes in the action log only, never on his screen. The last
+     * line is also kept for Help, so a failure says why.
      */
     private fun onTunnelError(raw: String) {
+        lastTunnelLine = "Error: $raw"
         val plain = plainTunnelError(raw)
         logAction("Tunnel error: $raw")
         broadcastState(error = plain)
@@ -277,7 +306,7 @@ class KeepAliveService : Service() {
     private fun plainTunnelError(msg: String): String {
         val lower = msg.lowercase()
         return when {
-            "reinstall" in lower -> msg
+            "reinstall" in lower || "key" in lower || "help" in lower -> msg
             "cannot run program" in lower || "permission denied" in lower ->
                 "Tunnel did not start. Reinstall the app."
             "unknownhost" in lower || "unable to resolve" in lower ||
@@ -286,6 +315,30 @@ class KeepAliveService : Service() {
                 "No internet. Try again."
             else -> "Tunnel did not start. Try again."
         }
+    }
+
+    // ---- Floating window ----
+
+    /** Turn the floating window on or off. The choice is saved. */
+    fun setFloatingWindow(on: Boolean) {
+        prefs.edit().putBoolean(KEY_FLOATING_WINDOW, on).apply()
+        if (on) updateFloatingOverlay() else floatingOverlay.hide()
+        broadcastState()
+    }
+
+    /**
+     * Keep the floating window in step with the session. It shows
+     * only while the session runs and the owner has it on; when
+     * the session stops, the window goes away with it.
+     */
+    private fun updateFloatingOverlay() {
+        if (!prefs.getBoolean(KEY_FLOATING_WINDOW, false)) return
+        if (!sessionRunning) {
+            floatingOverlay.hide()
+            return
+        }
+        val statusText = if (a11yDead) "AgentPilot: Accessibility off" else "AgentPilot: Running"
+        floatingOverlay.show(statusText, tunnelUrl)
     }
 
     // ---- Notification and state broadcast ----
@@ -316,5 +369,6 @@ class KeepAliveService : Service() {
         val intent = Intent(ACTION_STATE_CHANGED).setPackage(packageName)
         if (error != null) intent.putExtra(EXTRA_ERROR, error)
         sendBroadcast(intent)
+        updateFloatingOverlay()
     }
 }
