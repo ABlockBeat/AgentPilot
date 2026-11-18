@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -200,6 +202,9 @@ class MainActivity : Activity() {
      * are actually installed. No crypto apps are listed at all, by
      * the owner's order. If none of them is installed, every
      * launchable app is shown instead so the picker is never empty.
+     * Tap an app to select it, it gets highlighted, then tap SELECT
+     * to confirm. SELECT stays off until an app is chosen. CANCEL
+     * only closes the picker without changing anything.
      * Android 11 and newer hide most installed apps from
      * queryIntentActivities unless QUERY_ALL_PACKAGES is declared in
      * the manifest, so that permission is declared there. The app
@@ -227,6 +232,7 @@ class MainActivity : Activity() {
         }
         val density = resources.displayMetrics.density
         val dp = { v: Int -> (v * density).toInt() }
+        var selected = -1
         val grid = GridView(this).apply {
             numColumns = 3
             horizontalSpacing = dp(12)
@@ -244,6 +250,17 @@ class MainActivity : Activity() {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
                     setPadding(dp(4), dp(8), dp(4), dp(8))
+                }
+                // The chosen app is highlighted with a teal border.
+                cell.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(16).toFloat()
+                    if (position == selected) {
+                        setColor(0xFFE0F2F1.toInt())
+                        setStroke(dp(2), Color.parseColor("#0F766E"))
+                    } else {
+                        setColor(Color.TRANSPARENT)
+                    }
                 }
                 val icon = ImageView(this@MainActivity).apply {
                     // The official icon of the app, from the phone itself.
@@ -266,21 +283,29 @@ class MainActivity : Activity() {
             .setTitle("Pick the app your agent may drive")
             .setView(grid)
             .setNegativeButton("Cancel", null)
+            .setPositiveButton("Select") { _, _ ->
+                if (selected >= 0) {
+                    val info = apps[selected]
+                    val pkg = info.activityInfo.packageName
+                    val label = info.loadLabel(packageManager).toString()
+                    prefs.edit()
+                        .putString(DriveService.KEY_TARGET_PACKAGE, pkg)
+                        .putString(DriveService.KEY_TARGET_LABEL, label)
+                        .apply()
+                    updateDriveStatus()
+                    status("Target app: $label")
+                }
+            }
             .create()
         grid.onItemClickListener =
             AdapterView.OnItemClickListener { _, _, which, _ ->
-                val info = apps[which]
-                val pkg = info.activityInfo.packageName
-                val label = info.loadLabel(packageManager).toString()
-                prefs.edit()
-                    .putString(DriveService.KEY_TARGET_PACKAGE, pkg)
-                    .putString(DriveService.KEY_TARGET_LABEL, label)
-                    .apply()
-                updateDriveStatus()
-                status("Target app: $label")
-                dialog.dismiss()
+                selected = which
+                (grid.adapter as BaseAdapter).notifyDataSetChanged()
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
             }
         dialog.show()
+        // SELECT stays off until an app is chosen.
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
     }
 
     /** Open Accessibility settings so the owner can turn the service on by hand. */
