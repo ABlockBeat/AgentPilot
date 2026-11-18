@@ -25,7 +25,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.2.
+ * AgentPilot, drive engine, version 0.6.4.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -97,6 +97,11 @@ class DriveService : AccessibilityService() {
 
     override fun onServiceConnected() {
         instance = this
+        // Tell the home screen the service just bound, so its button
+        // refreshes from "Turn on Accessibility" to "Start" at once.
+        // Without this the button stays stale until the next resume,
+        // and a fresh install can sit on the wrong button forever.
+        sendBroadcast(Intent(KeepAliveService.ACTION_STATE_CHANGED).setPackage(packageName))
         // Config also lives in res/xml/accessibilityservice.xml. Keep the
         // flags in sync here in case the XML is ever skipped.
         val info = serviceInfo
@@ -119,6 +124,9 @@ class DriveService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        // Same refresh in reverse: the home screen must fall back to
+        // "Turn on Accessibility" as soon as the service is gone.
+        sendBroadcast(Intent(KeepAliveService.ACTION_STATE_CHANGED).setPackage(packageName))
         return super.onUnbind(intent)
     }
 
