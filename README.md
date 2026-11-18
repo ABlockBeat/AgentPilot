@@ -1,5 +1,8 @@
 # AgentPilot
 
+> **Proprietary software. Copyright (c) 2026 ABlockBeat. All rights reserved.**
+> This code is not open source. No permission is granted to use, copy, modify, or distribute it. See [LICENSE](LICENSE).
+
 <p align="center"><img src="agentpilot-logo.png" width="160" alt="AgentPilot logo"></p>
 
 Your agent drives your phone. AgentPilot is an Android app that lets your AI agent use the real apps on your phone, starting with your own mobile browser.
