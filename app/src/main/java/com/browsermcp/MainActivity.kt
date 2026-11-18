@@ -699,10 +699,14 @@ class MainActivity : Activity() {
         startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
     }
 
-    /** Switch the tunnel service. The tunnel restarts on the new one. */
+    /** Switch the tunnel service: Cloudflare, ngrok, Tailscale, then back. The tunnel restarts on the new one. */
     private fun switchTunnelBackend() {
         val current = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
-        val next = if (current == "ngrok") "cloudflare" else "ngrok"
+        val next = when (current) {
+            "cloudflare" -> "ngrok"
+            "ngrok" -> "tailscale"
+            else -> "cloudflare"
+        }
         prefs.edit().putString(KeepAliveService.KEY_TUNNEL_BACKEND, next).apply()
         status("Tunnel service: $next.")
         if (sessionRunning()) {
