@@ -30,7 +30,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.4.5.
+ * AgentPilot, Android app, version 0.4.6.
  *
  * One engine only: DriveService, an AccessibilityService that drives
  * the REAL apps on the phone, the ones the owner already uses and is
@@ -386,7 +386,7 @@ class MainActivity : Activity() {
     private fun checkForUpdate() {
         thread {
             try {
-                val conn = URL("https://api.github.com/repos/ranabdullah1065-blip/browser-mcp/releases/latest").openConnection() as HttpURLConnection
+                val conn = URL("https://api.github.com/repos/ranabdullah1065-blip/AgentPilot/releases/latest").openConnection() as HttpURLConnection
                 conn.connectTimeout = 8000
                 conn.readTimeout = 8000
                 conn.setRequestProperty("User-Agent", "AgentPilot")
