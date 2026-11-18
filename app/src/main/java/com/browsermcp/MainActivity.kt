@@ -195,18 +195,42 @@ class MainActivity : Activity() {
     /**
      * The owner picks ONE app your agent may drive. The picker is a
      * grid, 3 apps in a row, each with its official icon and name, so
-     * the list is short and there is little scrolling. Only launchable
-     * apps are listed. Android 11 and newer hide most installed apps
-     * from queryIntentActivities unless QUERY_ALL_PACKAGES is declared
-     * in the manifest, so that permission is declared there. The app
+     * the list is short and there is little scrolling. Only the
+     * important apps are listed, Chrome first, and only those that
+     * are actually installed. If none of them is installed, every
+     * launchable app is shown instead so the picker is never empty.
+     * Android 11 and newer hide most installed apps from
+     * queryIntentActivities unless QUERY_ALL_PACKAGES is declared in
+     * the manifest, so that permission is declared there. The app
      * itself is never listed, it cannot drive itself. The choice is
      * saved and can be changed any time by picking again.
      */
     private fun showAppPicker() {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val apps = packageManager.queryIntentActivities(intent, 0)
+        val installed = packageManager.queryIntentActivities(intent, 0)
             .filter { it.activityInfo.packageName != packageName }
-            .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+        val important = listOf(
+            "com.android.chrome",
+            "com.kubi.kucoin",
+            "com.bitget.exchange",
+            "com.okx.app",
+            "com.gateio.gateio",
+            "com.binance.dev",
+            "com.tradingview.tradingviewapp",
+            "org.telegram.messenger",
+            "com.twitter.android",
+            "com.google.android.youtube",
+            "com.instagram.android",
+            "com.zhiliaoapp.musically"
+        )
+        val picked = important.mapNotNull { pkg ->
+            installed.firstOrNull { it.activityInfo.packageName == pkg }
+        }
+        val apps = if (picked.isEmpty()) {
+            installed.sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+        } else {
+            picked
+        }
         val density = resources.displayMetrics.density
         val dp = { v: Int -> (v * density).toInt() }
         val grid = GridView(this).apply {
