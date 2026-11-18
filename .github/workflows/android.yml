@@ -50,9 +50,13 @@ jobs:
         # fetches the official arm64 release here and places it where
         # Gradle picks it up as a native lib, so the APK ships it
         # inside and the phone never downloads anything.
+        # Pinned to release 2026.11.1 and checked by sha256: curl
+        # --fail means a 404 or a redirect failure fails the build
+        # instead of saving an error page as the binary.
         run: |
           mkdir -p app/src/main/jniLibs/arm64-v8a
-          curl -sL -o app/src/main/jniLibs/arm64-v8a/libcloudflared.so https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64
+          curl --fail -sL -o app/src/main/jniLibs/arm64-v8a/libcloudflared.so https://github.com/cloudflare/cloudflared/releases/download/2026.11.1/cloudflared-linux-arm64
+          echo "b155cec3e48e489cfb8e5c602769fb8c771083018d8881d68b4d18a791567c5a  app/src/main/jniLibs/arm64-v8a/libcloudflared.so" | sha256sum -c -
           ls -l app/src/main/jniLibs/arm64-v8a/
           file app/src/main/jniLibs/arm64-v8a/libcloudflared.so
       - name: Build debug APK
@@ -62,6 +66,12 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleDebug --no-daemon
+      - name: Verify tunnel binary in APK
+        # The build must fail unless the tunnel binary actually
+        # landed inside the APK at the expected size. A bad download
+        # must never ship silently.
+        run: |
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "37818397.*lib/arm64-v8a/libcloudflared.so"
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -70,7 +80,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.5.2-${{ github.run_number }}
-          name: AgentPilot v0.5.2 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.5.2: the tunnel is built into the app, no download, Start Tunnel just works."
+          tag_name: v0.6.0-${{ github.run_number }}
+          name: AgentPilot v0.6.0 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.0: the connection finally works end to end — saved token, session survives Back, hardened server, tunnel that stays up, action log, and more."
           files: app/build/outputs/apk/debug/app-debug.apk
