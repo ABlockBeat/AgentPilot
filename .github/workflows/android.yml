@@ -80,7 +80,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.2-${{ github.run_number }}
-          name: AgentPilot v0.6.2 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.2: one tap connects everything, the tunnel starts by itself with the session and the link appears on its own, with Share connection to send the link and the key together."
+          tag_name: v0.6.3-${{ github.run_number }}
+          name: AgentPilot v0.6.3 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.3: fixes the crash on Android 13 and newer, the app now registers its internal state broadcast with RECEIVER_NOT_EXPORTED, so it opens on every phone and on the emulator."
           files: app/build/outputs/apk/debug/app-debug.apk
