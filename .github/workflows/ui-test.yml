@@ -112,6 +112,8 @@ jobs:
             adb shell dumpsys accessibility | grep -i "browsermcp" || echo "SERVICE NOT FOUND IN DUMPSYS"
             adb shell pidof com.browsermcp || echo "NO APP PROCESS RUNNING"
             adb shell dumpsys accessibility
+            echo "--- pre-Maestro logcat: app lines since install (ring buffer) ---"
+            adb logcat -d | grep -i "AgentPilot" || echo "(no AgentPilot lines in ring buffer yet)"
             maestro test --test-output-dir maestro-output maestro/agentpilot-flow.yaml || (adb shell dumpsys accessibility; adb shell pidof com.browsermcp || echo "NO APP PROCESS RUNNING"; exit 1)
       - name: Show failure hierarchy in log
         # The Maestro step prints only the failed assertion, never what
