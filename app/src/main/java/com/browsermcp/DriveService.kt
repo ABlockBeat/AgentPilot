@@ -3,6 +3,7 @@ package com.browsermcp
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
@@ -20,10 +21,11 @@ import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.4.2.
+ * AgentPilot, drive engine, version 0.6.0.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -63,6 +65,31 @@ class DriveService : AccessibilityService() {
         const val PREFS = "browser_mcp"
         const val KEY_TARGET_PACKAGE = "target_package"
         const val KEY_TARGET_LABEL = "target_label"
+        const val KEY_TOKEN = "mcp_token"
+
+        /**
+         * The MCP bearer token, generated once and saved. The tunnel
+         * URL alone connects nothing: the agent needs this token too.
+         * It never changes on its own, only when the owner taps New
+         * key in Help. The server reads it fresh on every start.
+         */
+        fun storedToken(context: Context): String {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            var token = prefs.getString(KEY_TOKEN, "") ?: ""
+            if (token.isEmpty()) {
+                token = UUID.randomUUID().toString()
+                prefs.edit().putString(KEY_TOKEN, token).apply()
+            }
+            return token
+        }
+
+        /** A new token, saved at once. The old one stops working. */
+        fun newToken(context: Context): String {
+            val token = UUID.randomUUID().toString()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(KEY_TOKEN, token).apply()
+            return token
+        }
     }
 
     @Volatile
