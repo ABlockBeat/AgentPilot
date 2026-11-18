@@ -1,0 +1,81 @@
+# AgentPilot UI test, run by Maestro on a cloud emulator.
+#
+# What it tests, in order:
+#   Part 1, fresh install: the home screen shows AgentPilot with
+#   "Not set up", and "Set up" opens the "Pick an app" picker.
+#   Part 2, full journey: pick Chrome, reach Running, start the
+#   tunnel, and the trycloudflare.com link MUST appear on screen.
+#   If the link never appears, the flow FAILS. That is the bug
+#   this test hunts: on the owner's phone the tunnel starts but
+#   the link never shows. Then Help opens and the connection key
+#   must be visible.
+#
+# What it needs before it runs (the CI workflow does this):
+#   - The APK installed on the emulator.
+#   - The Accessibility service enabled with adb, so the home
+#     screen goes Ready instead of asking to turn it on.
+#   - The emulator image must have Chrome (the Play Store image
+#     does). If Chrome is not in the shortlist, the flow opens
+#     "Show all apps" and picks it there.
+#
+# What it does NOT test: the owner's real Chrome logins, his
+# phone network, or OEM battery killers. The emulator is a
+# clean room, not his phone.
+appId: com.browsermcp
+name: AgentPilot UI test
+---
+# Part 1: fresh install.
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- assertVisible: "AgentPilot"
+- assertVisible: "Not set up"
+- takeScreenshot: home-fresh-install
+- tapOn: "Set up"
+- assertVisible: "Pick an app"
+- takeScreenshot: picker
+- back
+- assertVisible: "Not set up"
+
+# Part 2: pick Chrome and drive the app to Running.
+- tapOn: "Set up"
+- assertVisible: "Pick an app"
+- runFlow:
+    when:
+      visible: "Chrome"
+    commands:
+      - tapOn: "Chrome"
+- runFlow:
+    when:
+      notVisible: "Chrome"
+    commands:
+      - tapOn: "Show all apps"
+      - tapOn: "Chrome"
+# The main button says Start once Accessibility is on. The text
+# is matched exactly, so "Start Tunnel" below it is never tapped
+# by mistake. The wait covers the service binding after launch.
+- extendedWaitUntil:
+    visible:
+      text: "^Start$"
+    timeout: 15000
+- tapOn:
+    text: "^Start$"
+- assertVisible: "Running"
+- takeScreenshot: home-running
+
+# Part 3: the tunnel link. This MUST appear within 60 seconds.
+# If it does not, the flow fails here. That failure is the point:
+# it means the tunnel started but the link never showed, the same
+# bug the owner sees on his phone.
+- tapOn: "Start Tunnel"
+- extendedWaitUntil:
+    visible: "trycloudflare.com"
+    timeout: 60000
+- assertVisible: "trycloudflare.com"
+- takeScreenshot: tunnel-link-visible
+
+# Part 4: the connection key lives in Help.
+- tapOn: "Help"
+- assertVisible: "Connection key (tap to copy):"
+- takeScreenshot: help-connection-key
+- back
