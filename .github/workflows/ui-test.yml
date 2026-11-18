@@ -46,18 +46,20 @@ jobs:
         with:
           # No gradlew wrapper in this repo, so Gradle comes from here.
           gradle-version: "8.7"
-      - name: Download x86_64 cloudflared for the emulator
-        # The APK ships the tunnel binary for arm64 phones only. The
-        # cloud emulator is x86_64, so without this the tunnel could
-        # never start there and the link test would always fail. This
-        # step stages the matching official binary, pinned and checked
-        # by sha256, only for the test build. The phone APK is
-        # unchanged: it still ships arm64 only. No secrets here.
+      - name: Download arm64 cloudflared for the test build
+        # The app ships arm64-v8a only (abiFilters in
+        # app/build.gradle), so the test APK needs the arm64
+        # tunnel binary too, or the verify step below fails.
+        # Same pinned release and sha256 as the main workflow.
+        # The x86_64 emulator runs ARM libs through its native
+        # bridge, so the arm64 binary works there; the tunnel
+        # link step still fails at the standing assertion, as
+        # always, because the emulator cannot reach Cloudflare.
         run: |
-          mkdir -p app/src/main/jniLibs/x86_64
-          curl --fail -sL -o app/src/main/jniLibs/x86_64/libcloudflared.so https://github.com/cloudflare/cloudflared/releases/download/2026.11.1/cloudflared-linux-amd64
-          echo "97bb3b02d23a5980fc9c15a1a270e692da1923f103f920d5b16d4931d5ab55e7  app/src/main/jniLibs/x86_64/libcloudflared.so" | sha256sum -c -
-          file app/src/main/jniLibs/x86_64/libcloudflared.so
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          curl --fail -sL -o app/src/main/jniLibs/arm64-v8a/libcloudflared.so https://github.com/cloudflare/cloudflared/releases/download/2026.11.1/cloudflared-linux-arm64
+          echo "b155cec3e48e489cfb8e5c602769fb8c771083018d8881d68b4d18a791567c5a  app/src/main/jniLibs/arm64-v8a/libcloudflared.so" | sha256sum -c -
+          file app/src/main/jniLibs/arm64-v8a/libcloudflared.so
       - name: Set up Go 1.27.3
         # Same pinned Go as the main build workflow: the UI test
         # build also needs the embedded Tailscale AAR.
@@ -86,12 +88,13 @@ jobs:
         # No signing key needed: a fresh emulator has no old install
         # to conflict with, so the default debug key is enough.
         run: gradle assembleDebug --no-daemon
-      - name: Verify x86_64 tunnel binary in APK
+      - name: Verify arm64 tunnel binary in APK
         # The build must fail unless the tunnel binary actually
         # landed inside the APK. A bad download must never pass
-        # silently into the test.
+        # silently into the test. arm64, not x86_64: the app
+        # ships arm64-v8a only now, so no x86_64 lib is packaged.
         run: |
-          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "lib/x86_64/libcloudflared.so"
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "lib/arm64-v8a/libcloudflared.so"
       - name: Install Maestro CLI
         # Needs Java 17, already set up above. The installer puts
         # Maestro in $HOME/.maestro/bin; GITHUB_PATH keeps it on PATH
