@@ -12,6 +12,8 @@ import android.content.SharedPreferences
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -88,16 +90,48 @@ class KeepAliveService : Service() {
     @Volatile private var lastTunnelLine: String = ""
     @Volatile private var lastTunnelRawLine: String = ""
     @Volatile private var lastTunnelError: String = ""
+    @Volatile private var serverBindAll: Boolean = false
 
-    /** Cloudflare is the default; ngrok is the alternative. */
+    /** Cloudflare is the default; ngrok is the alternative. Tailscale
+     * is a third mode with no public tunnel: the phone's own
+     * private-network address is the connection. */
     private fun activeTunnel(): TunnelBackend =
         if (prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "ngrok") ngrokManager else tunnelManager
 
-    val tunnelRunning: Boolean get() = activeTunnel().running
-    val tunnelInstalling: Boolean get() = activeTunnel().installing
-    val tunnelInstalled: Boolean get() = activeTunnel().installed
-    val tunnelRestarting: Boolean get() = activeTunnel().restarting
-    val tunnelUrl: String? get() = activeTunnel().publicUrl
+    val tunnelRunning: Boolean get() = if (isTailscaleBackend()) sessionRunning && tailscaleIp() != null else activeTunnel().running
+    val tunnelInstalling: Boolean get() = if (isTailscaleBackend()) false else activeTunnel().installing
+    val tunnelInstalled: Boolean get() = if (isTailscaleBackend()) true else activeTunnel().installed
+    val tunnelRestarting: Boolean get() = if (isTailscaleBackend()) false else activeTunnel().restarting
+    val tunnelUrl: String? get() = if (isTailscaleBackend()) tailscaleIp()?.let { "http://$it:8765" } else activeTunnel().publicUrl
+
+    /** True when the owner picked Tailscale instead of a public tunnel. */
+    private fun isTailscaleBackend(): Boolean =
+        prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "tailscale"
+
+    /**
+     * The phone's Tailscale address, in 100.64.0.0/10, or null when
+     * the Tailscale app is off or not signed in. That address is
+     * the connection in Tailscale mode: the cloud reaches the MCP
+     * server on it, no public tunnel involved.
+     */
+    private fun tailscaleIp(): String? {
+        return try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val addresses = interfaces.nextElement().inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val addr = addresses.nextElement()
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        val b = addr.address
+                        if (b[0] == 100.toByte() && b[1] >= 64 && b[1] <= 127) return addr.hostAddress
+                    }
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
     val tunnelLastLine: String get() = lastTunnelLine
     val tunnelRawLine: String get() = lastTunnelRawLine
     val tunnelError: String get() = lastTunnelError
@@ -186,8 +220,10 @@ class KeepAliveService : Service() {
     private fun startSession() {
         if (sessionRunning) return
         val token = DriveService.storedToken(this)
+        serverBindAll = isTailscaleBackend()
         val server = McpServer(
             token,
+            serverBindAll,
             onLog = { name -> logAction(name) },
             onServerStopped = { msg -> onServerDied(msg) }
         )
@@ -259,7 +295,33 @@ class KeepAliveService : Service() {
     private fun startTunnelFlow() {
         if (!sessionRunning) startSession()
         if (!sessionRunning) return
+        // Tailscale mode needs the server on every interface, the
+        // public tunnels need localhost only. When the backend
+        // changed under a running session, rebind the server and
+        // come back here; after the restart the bind matches, so
+        // this never loops.
+        if (isTailscaleBackend() != serverBindAll) {
+            restartServer()
+            return
+        }
         lastTunnelError = ""
+        if (isTailscaleBackend()) {
+            // No public tunnel to install or start: the phone's
+            // Tailscale address IS the connection. When the
+            // Tailscale app is off, say so plainly.
+            val ip = tailscaleIp()
+            if (ip == null) {
+                lastTunnelRawLine = "Tailscale is off. Open Tailscale and sign in."
+                onTunnelError("Tailscale is off. Open Tailscale and sign in.")
+            } else {
+                lastTunnelLine = "Tailscale: $ip"
+                lastTunnelRawLine = "Tailscale: $ip"
+                logAction("Tailscale connected: $ip")
+                updateFloatingOverlay()
+                broadcastState()
+            }
+            return
+        }
         val tunnel = activeTunnel()
         if (tunnel.running || tunnel.installing) return
         if (prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "ngrok" &&
@@ -315,7 +377,7 @@ class KeepAliveService : Service() {
     private fun plainTunnelError(msg: String): String {
         val lower = msg.lowercase()
         return when {
-            "reinstall" in lower || "key" in lower || "help" in lower -> msg
+            "reinstall" in lower || "key" in lower || "help" in lower || "tailscale" in lower -> msg
             "cannot run program" in lower || "permission denied" in lower ->
                 "Tunnel did not start. Reinstall the app."
             "unknownhost" in lower || "unable to resolve" in lower ||
