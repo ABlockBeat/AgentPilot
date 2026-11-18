@@ -214,7 +214,6 @@ class MainActivity : Activity() {
             "com.android.chrome",
             "org.telegram.messenger",
             "com.twitter.android",
-            "com.google.android.youtube",
             "com.instagram.android",
             "com.zhiliaoapp.musically"
         )
