@@ -133,7 +133,7 @@ class TailnetTestActivity : Activity() {
         thread {
             var failure: String? = null
             try {
-                Tailnet.Start(stateDir(), key, "agentpilot", false, 60000L)
+                Tailnet.start(stateDir(), key, "agentpilot", false, 60000L)
             } catch (e: Exception) {
                 failure = e.message ?: e.toString()
             }
@@ -154,7 +154,7 @@ class TailnetTestActivity : Activity() {
         thread {
             var failure: String? = null
             try {
-                Tailnet.Stop()
+                Tailnet.stop()
             } catch (e: Exception) {
                 failure = e.message ?: e.toString()
             }
@@ -174,13 +174,13 @@ class TailnetTestActivity : Activity() {
             var json: String? = null
             var failure: String? = null
             try {
-                json = Tailnet.Status()
+                json = Tailnet.status()
             } catch (e: Exception) {
                 failure = e.message ?: e.toString()
             }
             var ip = ""
             try {
-                ip = Tailnet.TailnetIP()
+                ip = Tailnet.tailnetIP()
             } catch (e: Exception) {
                 // Status already carries the error; the IP is extra.
             }
@@ -200,7 +200,7 @@ class TailnetTestActivity : Activity() {
         thread {
             var failure: String? = null
             try {
-                Tailnet.ClearState(stateDir())
+                Tailnet.clearState(stateDir())
             } catch (e: Exception) {
                 failure = e.message ?: e.toString()
             }
