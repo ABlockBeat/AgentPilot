@@ -98,7 +98,7 @@ jobs:
             echo "--- accessibility service state ---"
             adb shell settings get secure enabled_accessibility_services
             adb shell settings get secure accessibility_enabled
-            for i in 1 2 3 4 5 6 7 8 9 10 11 12; do if adb shell dumpsys accessibility | grep "Bound services" | grep -qi "browsermcp"; then echo "service BOUND after check $i"; break; fi; sleep 5; done
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12; do if adb shell dumpsys accessibility | grep -qi "AgentPilot driver"; then echo "service BOUND after check $i"; break; fi; sleep 5; done
             adb shell dumpsys accessibility | grep -i "browsermcp" || echo "SERVICE NOT FOUND IN DUMPSYS"
             adb shell dumpsys accessibility
             maestro test --test-output-dir maestro-output maestro/agentpilot-flow.yaml || (adb shell dumpsys accessibility; exit 1)
@@ -135,6 +135,8 @@ jobs:
           "
           echo "--- crash reports in full ---"
           find maestro-output -name "crash-report.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; cat "$f"; echo; done
+          echo "--- logcat: service lifecycle and crashes ---"
+          find maestro-output -name "device-logcat.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; grep -i -E "browsermcp|DriveService|AndroidRuntime|FATAL|Force stopping|force-stop|Crashed|disabled" "$f" | head -n 200; echo; done
       - name: Upload Maestro output
         # Always runs, even when the flow fails, so the screenshots
         # are there to look at either way.
