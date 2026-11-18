@@ -136,7 +136,7 @@ jobs:
           echo "--- crash reports in full ---"
           find maestro-output -name "crash-report.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; cat "$f"; echo; done
           echo "--- logcat: service lifecycle and crashes ---"
-          find maestro-output -name "device-logcat.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; grep -i -E "browsermcp|DriveService|AndroidRuntime|FATAL|Force stopping|force-stop|Crashed|disabled" "$f" | head -n 200; echo; done
+          find maestro-output -name "device-logcat.txt" -print0 2>/dev/null | while IFS= read -r -d '' f; do echo "== $f"; grep -i -E "browsermcp|DriveService|AndroidRuntime|FATAL|Force stopping|force-stop|Crashed|disabled" "$f" | tail -n 200; echo; done
       - name: Upload Maestro output
         # Always runs, even when the flow fails, so the screenshots
         # are there to look at either way.
