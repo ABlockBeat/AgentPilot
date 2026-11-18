@@ -96,7 +96,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.11-${{ github.run_number }}
-          name: AgentPilot v0.6.11 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.11: the Start button no longer depends on the live service instance, which can drop briefly while the service rebinds. It now reads whether the service is enabled in Settings, so Start shows as soon as the service is on."
+          tag_name: v0.6.12-${{ github.run_number }}
+          name: AgentPilot v0.6.12 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.12: the ngrok tunnel no longer spins on Connecting forever. If no link appears in 60 seconds, the tunnel stops and the home screen says why: check the key in Help, or try mobile data."
           files: app/build/outputs/apk/debug/app-debug.apk
