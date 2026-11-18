@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.11.
+ * AgentPilot, Android app, version 0.6.12.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
