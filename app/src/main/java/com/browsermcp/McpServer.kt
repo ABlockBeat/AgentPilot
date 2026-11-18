@@ -13,12 +13,16 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, local only, version 0.6.14.
+ * Built-in MCP server, streamable HTTP, version 0.6.16.
  *
- * Binds 127.0.0.1 port 8765 only, never 0.0.0.0, never reachable off the
- * phone. Every request needs Authorization: Bearer, with the token the
- * app generated once and saved. The token is shown in Help, with
- * tap to copy, and changes only when the owner taps New key there.
+ * Binds 127.0.0.1 port 8765 by default, never reachable off the
+ * phone. In Tailscale mode it binds 0.0.0.0 instead, so the
+ * phone's private-network address can reach it; the bearer token
+ * still guards every request, and Tailscale itself only admits
+ * devices on the owner's own private network. Every request
+ * needs Authorization: Bearer, with the token the app generated
+ * once and saved. The token is shown in Help, with tap to copy,
+ * and changes only when the owner taps New key there.
  * 12 tools only: the drive tools that drive the REAL apps on the phone
  * through DriveService. The in-app WebView browser and its 12 tools are
  * gone: that was an option that did not do the real work, exchanges
@@ -38,6 +42,7 @@ import kotlin.concurrent.thread
  */
 class McpServer(
     private val token: String,
+    private val bindAll: Boolean,
     private val onLog: (String) -> Unit,
     private val onServerStopped: (String?) -> Unit
 ) {
@@ -56,7 +61,11 @@ class McpServer(
      */
     fun start(): Boolean {
         return try {
-            socket = ServerSocket(8765, 8, InetAddress.getByName("127.0.0.1"))
+            // Tailscale mode listens on every interface, so the
+            // phone's private-network address reaches it. Otherwise
+            // localhost only, never reachable off the phone.
+            val host = if (bindAll) "0.0.0.0" else "127.0.0.1"
+            socket = ServerSocket(8765, 8, InetAddress.getByName(host))
             running = true
             thread {
                 try {
