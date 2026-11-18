@@ -96,7 +96,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.9-${{ github.run_number }}
-          name: AgentPilot v0.6.9 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.9: diagnostic logging only, the service lifecycle and the home screen state are logged, so the UI test can prove whether the Accessibility service ever connects in the emulator. No behavior change."
+          tag_name: v0.6.10-${{ github.run_number }}
+          name: AgentPilot v0.6.10 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.10: Disconnect sticks (no auto-start after an explicit Disconnect), and the tunnel box shows the plain failure reason instead of Connecting forever. The UI test dump now prints the app's own log lines separately, so the diagnostic logging can be judged."
           files: app/build/outputs/apk/debug/app-debug.apk
