@@ -1,3 +1,5 @@
+// Copyright (c) 2026 ABlockBeat. All rights reserved.
+
 package com.browsermcp
 
 import android.app.Notification
@@ -15,7 +17,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * AgentPilot, session owner, version 0.6.2.
+ * AgentPilot, session owner, version 0.6.6.
  *
  * This service owns the whole connection: the MCP server, the
  * tunnel, and the log of what the agent did. It is a started
