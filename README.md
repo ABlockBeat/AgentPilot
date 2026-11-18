@@ -13,7 +13,7 @@ Your agent drives your phone. AgentPilot is an Android app that lets your AI age
 
 ## Install
 
-Download the latest APK from [Releases](https://github.com/ranabdullah1065-blip/AgentPilot/releases) and install it on your phone. After this version, the app updates itself from inside the app.
+Download the latest APK from [Releases](https://github.com/ABlockBeat/AgentPilot/releases) and install it on your phone. After this version, the app updates itself from inside the app.
 
 ## Setup
 
