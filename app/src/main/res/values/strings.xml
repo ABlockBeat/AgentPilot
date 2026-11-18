@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Browser MCP</string>
-    <string name="accessibility_service_description">Browser MCP drives the one app you pick, so your agent can tap and type in it for you. It never reads or types passwords. Turn it off any time in Accessibility settings.</string>
+    <string name="app_name">AgentPilot</string>
+    <string name="accessibility_service_description">AgentPilot drives the one app you pick, so your agent can tap and type in it for you. It never reads or types passwords. Turn it off any time in Accessibility settings.</string>
 </resources>
