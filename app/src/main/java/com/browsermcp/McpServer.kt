@@ -116,7 +116,7 @@ class McpServer(private val activity: MainActivity, private val token: String) {
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "browser-mcp").put("version", "0.4.4"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.4.6"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")
