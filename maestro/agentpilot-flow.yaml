@@ -24,9 +24,13 @@
 appId: com.browsermcp
 name: AgentPilot UI test
 ---
-# Part 1: fresh install.
-- launchApp:
-    clearState: true
+# Part 1: fresh install. The fresh state comes from the workflow, which
+# uninstalls the app before installing it. Do NOT use clearState here:
+# it force-stops the app and wipes its data, and that silently
+# disables the Accessibility service the workflow enabled before
+# Maestro started, so the home screen then says "Accessibility off"
+# and "Start" never appears.
+- launchApp
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible: "Not set up"
