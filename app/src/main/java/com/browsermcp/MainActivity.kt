@@ -982,6 +982,12 @@ class MainActivity : Activity() {
         body.addView(settingRow("Test the connection.", "Test", running) {
             testConnection()
         })
+        // TEST: the embedded Tailscale spike. A hidden debug screen,
+        // not part of the normal settings. It starts the embedded
+        // node with a pasted key and shows its 100.x address.
+        body.addView(settingRow("TEST: Embedded Tailscale (spike).", "Open", true) {
+            startActivity(Intent(this, TailnetTestActivity::class.java))
+        })
         // Connection key: shown in full, tap to copy, and a new key.
         body.addView(sectionHeading("Connection key"))
         val keyLabel = TextView(this).apply {
