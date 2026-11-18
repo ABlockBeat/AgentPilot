@@ -59,7 +59,7 @@ gomobile bind \
   -target=android/arm64 \
   -androidapi 26 \
   -javapkg=com.browsermcp \
-  -ldflags="-s -w -extldflags=-Wl,-z,max-page-size=16384,-Wl,-z,common-page-size=16384" \
+  -ldflags="-s -w -extldflags=-Wl,-z,max-page-size=16384,-z,common-page-size=16384" \
   -o "$AAR_OUT" \
   ./tailnet
 
