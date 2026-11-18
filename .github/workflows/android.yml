@@ -96,7 +96,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.13-${{ github.run_number }}
-          name: AgentPilot v0.6.13 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.13: Continue to Chrome only opens once the tunnel link exists, so it never leads nowhere while the connection is still coming up. Help holds only the five steps now; the tunnel, the connection key and the app settings moved into a new Settings dialog, grouped under Tunnel, Connection key and App. Also fixed: the ngrok tunnel reports after 60 seconds instead of spinning on Connecting forever."
+          tag_name: v0.6.14-${{ github.run_number }}
+          name: AgentPilot v0.6.14 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.14: the app never updates by itself any more. When a newer version is found only the Update button appears, and the download and install happen only when you tap it. Also in this version: Continue to Chrome only opens once the tunnel link exists. Help holds only the five steps now; the tunnel, the connection key and the app settings moved into a new Settings dialog. The ngrok tunnel reports after 60 seconds instead of spinning on Connecting forever. Plus a packaging fix so the build no longer fails on the native libraries step."
           files: app/build/outputs/apk/debug/app-debug.apk
