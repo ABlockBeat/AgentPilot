@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.9.
+ * AgentPilot, Android app, version 0.6.10.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -358,13 +358,17 @@ class MainActivity : Activity() {
      * switch already stay saved, so the only step the owner had to
      * repeat was turning MCP on. Now the app does that by itself when
      * it opens, but only when the setup is already done: a target app
-     * is picked and the Accessibility service is on. Otherwise nothing
-     * starts by itself and the owner sets it up by hand first.
+     * is picked and the Accessibility service is on, and a session
+     * was wanted. After a Disconnect it never starts by itself again.
      * The service may not be bound yet the moment the app opens, so
      * it tries a few times with a longer window instead of once.
      */
     private fun maybeAutoStartMcp() {
         if (sessionRunning()) return
+        // Disconnect must stick: after an explicit Disconnect the
+        // session is not wanted, so never auto-start it again. The
+        // flag is set by startSession and cleared by stopSession.
+        if (!prefs.getBoolean(KeepAliveService.KEY_SESSION_WANTED, false)) return
         val target = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
         if (target.isEmpty()) return
         if (DriveService.instance != null) {
@@ -549,10 +553,11 @@ class MainActivity : Activity() {
      * The tunnel status line and the Share connection button always
      * show the true state. The status line shows the public link
      * once it exists, or one short line while it is on its way.
-     * Share connection only shows once the link exists, and it
-     * sends the link and the key together. No raw tunnel output
-     * on the home screen, and no tunnel button: the tunnel starts
-     * by itself with the session.
+     * When the tunnel is dead, it shows the plain failure reason
+     * instead of pretending it is still connecting. Share connection
+     * only shows once the link exists, and it sends the link and the
+     * key together. No raw tunnel output on the home screen, and no
+     * tunnel button: the tunnel starts by itself with the session.
      */
     private fun updateTunnelUi() {
         val svc = service()
@@ -576,7 +581,11 @@ class MainActivity : Activity() {
             }
             sessionRunning() -> {
                 tunnelStatus.visibility = View.VISIBLE
-                tunnelStatus.text = "Connecting…"
+                // Failed state: when the tunnel is dead, show the
+                // stored plain reason instead of "Connecting…"
+                // forever. While it is still trying, the error is
+                // empty and the line stays "Connecting…".
+                tunnelStatus.text = svc?.tunnelError?.takeIf { it.isNotEmpty() } ?: "Connecting…"
                 shareButton.visibility = View.GONE
             }
             else -> {
