@@ -34,7 +34,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.2.
+ * AgentPilot, Android app, version 0.6.3.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -175,7 +175,11 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (!receiverRegistered) {
-            registerReceiver(stateReceiver, IntentFilter(KeepAliveService.ACTION_STATE_CHANGED))
+            // Android 13 and newer require this flag on registerReceiver
+            // for a non-system broadcast. Our state broadcast is sent
+            // only to this app's own package, so NOT_EXPORTED is right.
+            // Without it the app crashes at resume on API 33 and newer.
+            registerReceiver(stateReceiver, IntentFilter(KeepAliveService.ACTION_STATE_CHANGED), Context.RECEIVER_NOT_EXPORTED)
             receiverRegistered = true
         }
         // The owner may have toggled the service in Settings. Refresh,
