@@ -230,12 +230,16 @@ class MainActivity : Activity() {
 
     /**
      * The owner picks ONE app your agent may drive. Only launchable apps are
-     * listed, so no special package permission is needed. The choice is
-     * saved and can be changed any time by picking again.
+     * listed. Android 11 and newer hide most installed apps from
+     * queryIntentActivities unless QUERY_ALL_PACKAGES is declared in the
+     * manifest, so that permission is declared there. The app itself is
+     * never listed, it cannot drive itself. The choice is saved and can
+     * be changed any time by picking again.
      */
     private fun showAppPicker() {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(intent, 0)
+            .filter { it.activityInfo.packageName != packageName }
             .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
         val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
         AlertDialog.Builder(this)
