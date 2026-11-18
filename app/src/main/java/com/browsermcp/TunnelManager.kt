@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * Built-in tunnel for AgentPilot, version 0.5.2.
+ * Built-in tunnel for AgentPilot, version 0.6.0.
  *
  * The tunnel lives inside the app. No Termux, no download, no Play
  * Store, no outside app at any point. The cloudflared binary ships
@@ -32,6 +32,10 @@ import kotlin.concurrent.thread
  *   be listening on 8765, so the tunnel only starts while the app
  *   is Running. The first trycloudflare.com URL in the output is
  *   the public link, shown in the app and tappable to copy.
+ * - Stay up: if the tunnel process dies while the tunnel is
+ *   wanted, it restarts by itself with backoff, a few tries, and
+ *   only then gives up. A network change or a doze must not leave
+ *   the owner with a dead link and no message.
  * - Stop: kill the process. The tunnel is also stopped when the app
  *   is destroyed, and when the drive session stops.
  *
@@ -54,11 +58,19 @@ class TunnelManager(private val context: Context) {
 
     companion object {
         private const val BINARY_NAME = "libcloudflared.so"
+        private const val MAX_RESTARTS = 5
         private val TUNNEL_URL_REGEX = Regex("https://[A-Za-z0-9-]+\\.trycloudflare\\.com")
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var process: Process? = null
+    private var restartRunnable: Runnable? = null
+    private var restartAttempts: Int = 0
+
+    @Volatile var wanted: Boolean = false
+        private set
+    @Volatile var restarting: Boolean = false
+        private set
 
     @Volatile var publicUrl: String? = null
         private set
@@ -116,10 +128,12 @@ class TunnelManager(private val context: Context) {
 
     /**
      * Start the tunnel to the local MCP server. Reports the public
-     * URL as soon as cloudflared prints it, then every output line
-     * after that so the app can show the tunnel is working. When
-     * the process ends, onStopped runs. If it ends before any URL
-     * appears, onError runs with the last output line.
+     * URL as soon as cloudflared prints it. If the process dies
+     * while the tunnel is wanted, it restarts by itself with
+     * backoff, a few tries, and only then gives up. When the
+     * process ends, onStopped runs. If it ends before any URL
+     * appears and no restart is left, onError runs with the last
+     * output line.
      */
     fun start(
         onUrl: (String) -> Unit,
@@ -132,8 +146,20 @@ class TunnelManager(private val context: Context) {
             mainHandler.post { onError("Tunnel binary missing, reinstall the app") }
             return
         }
+        wanted = true
+        restartAttempts = 0
         running = true
         publicUrl = null
+        launchProcess(onUrl, onLog, onStopped, onError)
+    }
+
+    /** One run of the tunnel process, with restart on unexpected exit. */
+    private fun launchProcess(
+        onUrl: (String) -> Unit,
+        onLog: (String) -> Unit,
+        onStopped: () -> Unit,
+        onError: (String) -> Unit
+    ) {
         thread {
             try {
                 val proc = ProcessBuilder(
@@ -150,6 +176,8 @@ class TunnelManager(private val context: Context) {
                             if (found != null) {
                                 urlSent = true
                                 publicUrl = found.value
+                                restartAttempts = 0
+                                restarting = false
                                 val url = found.value
                                 mainHandler.post { onUrl(url) }
                             }
@@ -159,18 +187,60 @@ class TunnelManager(private val context: Context) {
                     }
                 }
                 val code = proc.waitFor()
-                running = false
                 process = null
-                if (!urlSent) {
-                    val detail = if (lastLine.isNotEmpty()) lastLine.take(120) else "exit code $code"
-                    mainHandler.post { onError("Tunnel stopped: $detail") }
+                if (!wanted) {
+                    running = false
+                    restarting = false
+                    if (!urlSent) {
+                        val detail = if (lastLine.isNotEmpty()) lastLine.take(120) else "exit code $code"
+                        mainHandler.post { onError("Tunnel stopped: $detail") }
+                    }
+                    mainHandler.post { onStopped() }
+                    return@thread
                 }
+                // Unexpected exit while the tunnel is wanted: restart
+                // with backoff, a few tries, then give up.
+                if (restartAttempts < MAX_RESTARTS) {
+                    restartAttempts++
+                    restarting = true
+                    val delayMs = minOf(5000L shl (restartAttempts - 1), 30000L)
+                    val retry = Runnable {
+                        if (wanted) launchProcess(onUrl, onLog, onStopped, onError)
+                    }
+                    restartRunnable = retry
+                    mainHandler.postDelayed(retry, delayMs)
+                    return@thread
+                }
+                wanted = false
+                running = false
+                restarting = false
+                mainHandler.post { onError("Tunnel stopped. Try again.") }
                 mainHandler.post { onStopped() }
             } catch (e: Exception) {
-                running = false
                 process = null
-                val msg = e.message ?: "error"
-                mainHandler.post { onError(msg) }
+                if (!wanted) {
+                    running = false
+                    restarting = false
+                    val msg = e.message ?: "error"
+                    mainHandler.post { onError(msg) }
+                    mainHandler.post { onStopped() }
+                    return@thread
+                }
+                if (restartAttempts < MAX_RESTARTS) {
+                    restartAttempts++
+                    restarting = true
+                    val delayMs = minOf(5000L shl (restartAttempts - 1), 30000L)
+                    val retry = Runnable {
+                        if (wanted) launchProcess(onUrl, onLog, onStopped, onError)
+                    }
+                    restartRunnable = retry
+                    mainHandler.postDelayed(retry, delayMs)
+                    return@thread
+                }
+                wanted = false
+                running = false
+                restarting = false
+                mainHandler.post { onError("Tunnel stopped. Try again.") }
                 mainHandler.post { onStopped() }
             }
         }
@@ -178,6 +248,10 @@ class TunnelManager(private val context: Context) {
 
     /** Kill the tunnel process, if one is running. Safe to call anytime. */
     fun stop() {
+        wanted = false
+        restarting = false
+        restartRunnable?.let { mainHandler.removeCallbacks(it) }
+        restartRunnable = null
         val proc = process
         process = null
         publicUrl = null
