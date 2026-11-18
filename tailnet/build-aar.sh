@@ -55,13 +55,25 @@ go install golang.org/x/mobile/cmd/gomobile
 gomobile init
 
 mkdir -p "$REPO_ROOT/app/libs"
-gomobile bind \
-  -target=android/arm64 \
-  -androidapi 26 \
-  -javapkg=com.browsermcp \
-  -ldflags="-s -w -extldflags=-Wl,-z,max-page-size=16384,-z,common-page-size=16384" \
-  -o "$AAR_OUT" \
-  ./tailnet
+# The bind runs `go mod tidy` first, which fetches from the Go
+# module proxy and the checksum database: a network blip there
+# fails the whole build (seen once, run #221), while the same step
+# passes on a re-run. Retry the bind up to three times so a blip
+# does not waste a whole build round.
+for attempt in 1 2 3; do
+  if gomobile bind \
+    -target=android/arm64 \
+    -androidapi 26 \
+    -javapkg=com.browsermcp \
+    -ldflags="-s -w -extldflags=-Wl,-z,max-page-size=16384,-z,common-page-size=16384" \
+    -o "$AAR_OUT" \
+    ./tailnet; then
+    break
+  fi
+  echo "gomobile bind failed (attempt $attempt), retrying..." >&2
+  [ "$attempt" = 3 ] && exit 1
+  sleep 10
+done
 
 # Verify the AAR: the facade class must exist by fully qualified
 # name, and the native lib must be arm64-v8a only.
