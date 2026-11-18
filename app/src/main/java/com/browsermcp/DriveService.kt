@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.random.Random
 
 /**
- * Browser MCP, drive engine, version 0.4.0.
+ * AgentPilot, drive engine, version 0.4.2.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -168,7 +168,7 @@ class DriveService : AccessibilityService() {
     private fun requireTargetForeground() {
         val target = targetPackage()
         if (target.isEmpty()) {
-            throw RuntimeException("No target app picked. Pick one in the Browser MCP app first.")
+            throw RuntimeException("No target app picked. Pick one in the AgentPilot app first.")
         }
         val cur = foregroundPackage()
         if (cur != target) {
@@ -520,7 +520,7 @@ class DriveService : AccessibilityService() {
     fun openApp(packageName: String): Map<String, Any> {
         val target = targetPackage()
         if (target.isEmpty()) {
-            throw RuntimeException("No target app picked. Pick one in the Browser MCP app first.")
+            throw RuntimeException("No target app picked. Pick one in the AgentPilot app first.")
         }
         if (packageName != target) {
             throw RuntimeException("That app is not the picked target. The target is $target.")

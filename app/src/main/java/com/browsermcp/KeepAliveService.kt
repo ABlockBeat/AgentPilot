@@ -8,7 +8,7 @@ import android.content.Intent
 import android.os.IBinder
 
 /**
- * Browser MCP, keep alive, version 0.4.0.
+ * AgentPilot, keep alive, version 0.4.2.
  *
  * A tiny foreground service with a visible notification. Its only job
  * is to keep the app process alive while MCP is on, so the MCP server
@@ -22,13 +22,13 @@ class KeepAliveService : Service() {
     override fun onCreate() {
         super.onCreate()
         val channel = NotificationChannel(
-            CHANNEL_ID, "Browser MCP",
+            CHANNEL_ID, "AgentPilot",
             NotificationManager.IMPORTANCE_LOW
         )
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Browser MCP is on")
+            .setContentTitle("AgentPilot is on")
             .setContentText("MCP server running on this phone.")
             .setSmallIcon(R.mipmap.ic_launcher)
             .build()

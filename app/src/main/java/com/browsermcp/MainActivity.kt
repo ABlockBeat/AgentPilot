@@ -22,7 +22,11 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 import java.io.FileOutputStream
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -32,11 +36,11 @@ import kotlin.concurrent.thread
 import kotlin.random.Random
 
 /**
- * Browser MCP, Android app, version 0.4.0.
+ * AgentPilot, Android app, version 0.4.2.
  *
  * Two engines in one app:
  * 1. A WebView browser the owner opens himself. Your agent drives it through
- *    the built-in MCP server on 127.0.0.1 only, with a bearer token,
+ *    the built-in MCP server on this phone only, with a bearer token,
  *    when the owner turns MCP on in the app. The owner sees everything
  *    on this screen and can take over at any time with his own hands.
  *    The WebView is a fallback only: exchanges detect it, so it is
@@ -64,11 +68,12 @@ import kotlin.random.Random
 class MainActivity : Activity() {
 
     lateinit var webView: WebView
-    private lateinit var statusBar: TextView
-    private lateinit var targetAppLabel: TextView
+    private lateinit var appStatus: TextView
+    private lateinit var mcpStatus: TextView
     private lateinit var a11yStatus: TextView
-    private lateinit var tunnelUrlBar: EditText
-    private lateinit var tunnelStatus: TextView
+    private lateinit var mcpButton: Button
+    private lateinit var updateButton: Button
+    private var updateDownloadUrl: String = ""
     private lateinit var prefs: SharedPreferences
     private var fileChooser: ValueCallback<Array<Uri>>? = null
     private var mcpServer: McpServer? = null
@@ -82,17 +87,15 @@ class MainActivity : Activity() {
 
         prefs = getSharedPreferences(DriveService.PREFS, MODE_PRIVATE)
         webView = findViewById(R.id.webView)
-        statusBar = findViewById(R.id.statusBar)
-        targetAppLabel = findViewById(R.id.targetAppLabel)
+        appStatus = findViewById(R.id.appStatus)
+        mcpStatus = findViewById(R.id.mcpStatus)
         a11yStatus = findViewById(R.id.a11yStatus)
-        tunnelUrlBar = findViewById(R.id.tunnelUrlBar)
-        tunnelStatus = findViewById(R.id.tunnelStatus)
+        mcpButton = findViewById(R.id.mcpButton)
+        updateButton = findViewById(R.id.updateButton)
         val urlBar = findViewById<EditText>(R.id.urlBar)
         val goButton = findViewById<Button>(R.id.goButton)
-        val mcpButton = findViewById<Button>(R.id.mcpButton)
         val pickTargetButton = findViewById<Button>(R.id.pickTargetButton)
         val a11yButton = findViewById<Button>(R.id.a11yButton)
-        val tunnelSaveButton = findViewById<Button>(R.id.tunnelSaveButton)
 
         val settings: WebSettings = webView.settings
         settings.javaScriptEnabled = true
@@ -153,21 +156,20 @@ class MainActivity : Activity() {
 
         mcpButton.setOnClickListener {
             if (mcpOn) stopMcp() else startMcp()
-            mcpButton.text = if (mcpOn) "MCP on" else "MCP off"
+            updateMcpUi()
         }
 
         pickTargetButton.setOnClickListener { showAppPicker() }
 
         a11yButton.setOnClickListener { openA11ySettings() }
 
-        tunnelSaveButton.setOnClickListener {
-            val url = tunnelUrlBar.text.toString().trim()
-            prefs.edit().putString(KEY_TUNNEL_URL, url).apply()
-            updateDriveStatus()
-            status("Tunnel URL saved: $url")
+        updateButton.setOnClickListener {
+            if (updateDownloadUrl.isNotEmpty()) downloadUpdate(updateDownloadUrl)
         }
 
         updateDriveStatus()
+        updateMcpUi()
+        checkForUpdate()
         webView.loadUrl("https://example.com")
     }
 
@@ -175,6 +177,7 @@ class MainActivity : Activity() {
         super.onResume()
         // The owner may have toggled the service in Settings. Refresh.
         updateDriveStatus()
+        updateMcpUi()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -191,7 +194,7 @@ class MainActivity : Activity() {
     }
 
     fun status(text: String) {
-        runOnUiThread { statusBar.text = text }
+        runOnUiThread { Toast.makeText(this, text, Toast.LENGTH_SHORT).show() }
     }
 
     private fun startMcp() {
@@ -206,8 +209,8 @@ class MainActivity : Activity() {
         } else {
             startService(keepAlive)
         }
-        status("MCP on. Local only: http://127.0.0.1:8765/mcp  Token: $token")
-        Toast.makeText(this, "MCP on. Token shown in status.", Toast.LENGTH_LONG).show()
+        updateMcpUi()
+        status("MCP on")
     }
 
     private fun stopMcp() {
@@ -216,7 +219,25 @@ class MainActivity : Activity() {
         WebView.setWebContentsDebuggingEnabled(false)
         mcpOn = false
         stopService(Intent(this, KeepAliveService::class.java))
-        status("MCP off.")
+        updateMcpUi()
+        status("MCP off")
+    }
+
+    /** One place for the MCP button and status line, so they never disagree. */
+    private fun updateMcpUi() {
+        if (mcpOn) {
+            mcpStatus.text = "MCP: ON"
+            mcpStatus.setTextColor(getColor(R.color.accent))
+            mcpButton.text = "MCP on"
+            mcpButton.setBackgroundResource(R.drawable.rounded_button)
+            mcpButton.setTextColor(getColor(R.color.white))
+        } else {
+            mcpStatus.text = "MCP: OFF"
+            mcpStatus.setTextColor(getColor(R.color.secondary))
+            mcpButton.text = "MCP off"
+            mcpButton.setBackgroundResource(R.drawable.rounded_button_outline)
+            mcpButton.setTextColor(getColor(R.color.accent))
+        }
     }
 
     fun regenerateToken(): String {
@@ -226,7 +247,7 @@ class MainActivity : Activity() {
 
     fun currentToken(): String = token
 
-    // ---- Target app picker, Accessibility settings, tunnel URL ----
+    // ---- Target app picker and Accessibility settings ----
 
     /**
      * The owner picks ONE app your agent may drive. Only launchable apps are
@@ -263,37 +284,25 @@ class MainActivity : Activity() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         Toast.makeText(
             this,
-            "Turn on Browser MCP in Accessibility, then come back.",
+            "Turn on AgentPilot in Accessibility, then come back.",
             Toast.LENGTH_LONG
         ).show()
     }
 
     private fun updateDriveStatus() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
-        val pkg = prefs.getString(DriveService.KEY_TARGET_PACKAGE, "") ?: ""
-        targetAppLabel.text = if (target.isEmpty()) {
-            "None picked"
+        appStatus.text = if (target.isEmpty()) {
+            "App: not picked"
         } else {
-            "$target ($pkg)"
+            "App: $target"
         }
         val on = DriveService.instance != null
-        a11yStatus.text = if (on) {
-            "Accessibility: ON. Driving: " + if (target.isEmpty()) {
-                "no app picked yet."
-            } else {
-                "$target."
-            }
+        if (on) {
+            a11yStatus.text = "Accessibility: ON"
+            a11yStatus.setTextColor(getColor(R.color.accent))
         } else {
-            "Accessibility: OFF. Tap Accessibility to turn it on in Settings."
-        }
-        val url = prefs.getString(KEY_TUNNEL_URL, "") ?: ""
-        tunnelStatus.text = if (url.isEmpty()) {
-            "Tunnel: not set up yet. MCP is local only (127.0.0.1:8765)."
-        } else {
-            "Tunnel URL: $url"
-        }
-        if (tunnelUrlBar.text.toString().isEmpty() && url.isNotEmpty()) {
-            tunnelUrlBar.setText(url)
+            a11yStatus.text = "Accessibility: OFF"
+            a11yStatus.setTextColor(getColor(R.color.secondary))
         }
     }
 
@@ -440,7 +449,7 @@ class MainActivity : Activity() {
 
     private fun drive(): DriveService =
         DriveService.instance
-            ?: throw RuntimeException("Accessibility service is off. Turn it on in Settings, Accessibility, Browser MCP.")
+            ?: throw RuntimeException("Accessibility service is off. Turn it on in Settings, Accessibility, AgentPilot.")
 
     fun driveTapText(text: String): Map<String, Any> = drive().tapText(text)
 
@@ -468,6 +477,106 @@ class MainActivity : Activity() {
     fun driveWaitForOwner(marker: String, timeoutSeconds: Int): Map<String, Any> =
         drive().waitForOwner(marker, timeoutSeconds)
 
+    // ---- In-app update: check GitHub releases, download, install ----
+
+    /**
+     * Check the latest public release on GitHub, in a background thread.
+     * If it is newer than this app, show the Update button. Fails
+     * silently when offline, never blocks the UI, never auto-downloads.
+     */
+    private fun checkForUpdate() {
+        thread {
+            try {
+                val conn = URL("https://api.github.com/repos/ranabdullah1065-blip/browser-mcp/releases/latest").openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", "AgentPilot")
+                conn.setRequestProperty("Accept", "application/vnd.github+json")
+                if (conn.responseCode != 200) return@thread
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val release = JSONObject(body)
+                val tag = release.optString("tag_name", "")
+                val releaseVersion = tag.removePrefix("v").substringBefore("-")
+                val current = currentVersionName()
+                if (releaseVersion.isEmpty() || current.isEmpty()) return@thread
+                if (compareVersions(releaseVersion, current) <= 0) return@thread
+                val assets = release.optJSONArray("assets") ?: return@thread
+                var downloadUrl = ""
+                for (i in 0 until assets.length()) {
+                    val asset = assets.getJSONObject(i)
+                    if (asset.optString("name") == "app-debug.apk") {
+                        downloadUrl = asset.optString("browser_download_url", "")
+                        break
+                    }
+                }
+                if (downloadUrl.isEmpty()) return@thread
+                updateDownloadUrl = downloadUrl
+                runOnUiThread { updateButton.visibility = View.VISIBLE }
+            } catch (e: Exception) {
+                // Offline or any error: no Update button, nothing shown.
+            }
+        }
+    }
+
+    /** Compare dotted versions numerically, segment by segment. */
+    private fun compareVersions(a: String, b: String): Int {
+        val pa = a.split(".").map { it.toIntOrNull() ?: 0 }
+        val pb = b.split(".").map { it.toIntOrNull() ?: 0 }
+        val n = maxOf(pa.size, pb.size)
+        for (i in 0 until n) {
+            val x = pa.getOrElse(i) { 0 }
+            val y = pb.getOrElse(i) { 0 }
+            if (x != y) return x.compareTo(y)
+        }
+        return 0
+    }
+
+    @Suppress("DEPRECATION")
+    private fun currentVersionName(): String {
+        return try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /** Download the release APK to the cache, then open the installer. */
+    private fun downloadUpdate(downloadUrl: String) {
+        updateButton.isEnabled = false
+        updateButton.text = "Downloading..."
+        thread {
+            try {
+                val apkFile = File(cacheDir, "update.apk")
+                val conn = URL(downloadUrl).openConnection() as HttpURLConnection
+                conn.connectTimeout = 15000
+                conn.readTimeout = 30000
+                conn.setRequestProperty("User-Agent", "AgentPilot")
+                if (conn.responseCode != 200) throw RuntimeException("Download failed")
+                conn.inputStream.use { input ->
+                    FileOutputStream(apkFile).use { output -> input.copyTo(output) }
+                }
+                runOnUiThread { installApk(apkFile) }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    updateButton.isEnabled = true
+                    updateButton.text = "Update"
+                    status("Update failed: " + (e.message ?: "error"))
+                }
+            }
+        }
+    }
+
+    private fun installApk(apkFile: File) {
+        updateButton.isEnabled = true
+        updateButton.text = "Update"
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(intent)
+    }
+
     private fun json(s: String): String {
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
     }
@@ -475,9 +584,5 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         stopMcp()
         super.onDestroy()
-    }
-
-    companion object {
-        const val KEY_TUNNEL_URL = "tunnel_url"
     }
 }
