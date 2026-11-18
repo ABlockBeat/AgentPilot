@@ -48,7 +48,11 @@ cd "$SCRIPT_DIR"
 go install golang.org/x/mobile/cmd/gobind
 go install golang.org/x/mobile/cmd/gomobile
 
-gomobile init -ndk "$ANDROID_NDK_HOME"
+# This x/mobile's `gomobile init` takes no -ndk flag (its usage is
+# `gomobile init [-openal dir]`); it reads the NDK from the
+# environment instead. ANDROID_NDK_HOME is already exported above,
+# and the workflow sets it too, so plain init finds the NDK.
+gomobile init
 
 mkdir -p "$REPO_ROOT/app/libs"
 gomobile bind \
