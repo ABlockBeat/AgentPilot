@@ -1,0 +1,3 @@
+# The embedded Tailscale AAR is built in CI by gomobile bind and
+# never committed (see tailnet/build-aar.sh).
+app/libs/
