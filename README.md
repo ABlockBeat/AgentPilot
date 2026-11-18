@@ -25,6 +25,10 @@ Download the latest APK from [Releases](https://github.com/ABlockBeat/AgentPilot
 4. Tap Start.
 5. Log in to your accounts by hand, inside the real app.
 
+## Tunnel
+
+The app connects your agent through a tunnel, so the cloud can reach your phone. Cloudflare is the default and needs no account. If Cloudflare does not start on your phone, switch to ngrok in Help: make a free account at ngrok.com, copy the authtoken, paste it in Help under "Paste ngrok key here", tap Save key. The floating window in Help shows the connection over other apps; it needs "Display over other apps" allowed once.
+
 ## Build
 
 Free, built on GitHub Actions. Every push builds a debug APK and publishes it as a release.
