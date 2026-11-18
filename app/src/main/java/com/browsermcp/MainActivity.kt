@@ -31,7 +31,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.5.1.
+ * AgentPilot, Android app, version 0.5.2.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -53,12 +53,11 @@ import org.json.JSONObject
  * cloud browser, no laptop, no extension.
  *
  * The tunnel lives inside the app, in TunnelManager. No Termux, no
- * separate download, no Play Store, no outside app at any point.
- * One tap on Install Tunnel downloads the cloudflared binary, about
- * 38 MB, one time only, installs it and verifies it runs. Start
- * Tunnel then opens the public link to the MCP server on this phone.
- * The tunnel only runs while the app is Running, and only when the
- * owner taps Start.
+ * download, no Play Store, no outside app at any point. The
+ * cloudflared binary ships inside the APK and runs from there.
+ * Start Tunnel opens the public link to the MCP server on this
+ * phone. The tunnel only runs while the app is Running, and only
+ * when the owner taps Start.
  *
  * The in-app WebView browser is gone. It was an option that did not
  * do the real work: exchanges detect a WebView and block logins, so
@@ -403,7 +402,7 @@ class MainActivity : Activity() {
 
     /**
      * The Tunnel button does whatever the tunnel needs next, one tap:
-     * install it, start it, or stop it. It only works while the app
+     * check it, start it, or stop it. It only works while the app
      * is Running, because the MCP server must be listening on 8765
      * first. Otherwise a short toast says to tap Start first.
      */
@@ -425,10 +424,9 @@ class MainActivity : Activity() {
     }
 
     /**
-     * One tap installs the tunnel: download, save, make executable,
-     * verify it runs. Everything happens inside the app. When the
-     * install finishes, the tunnel starts by itself, so the owner
-     * does not have to tap again.
+     * One tap checks the tunnel binary that ships inside the app and
+     * verifies it runs. When the check finishes, the tunnel starts
+     * by itself, so the owner does not have to tap again.
      */
     private fun installTunnel() {
         installProgress = 0
@@ -440,7 +438,7 @@ class MainActivity : Activity() {
             },
             onDone = {
                 installProgress = 100
-                status("Tunnel installed. Starting it now.")
+                status("Tunnel ready. Starting it now.")
                 updateTunnelUi()
                 startTunnel()
             },
@@ -504,11 +502,7 @@ class MainActivity : Activity() {
             }
             else -> {
                 tunnelButton.isEnabled = true
-                tunnelButton.text = if (tunnelManager.installed) {
-                    "Start Tunnel"
-                } else {
-                    "Install Tunnel (~38 MB, once)"
-                }
+                tunnelButton.text = "Start Tunnel"
                 tunnelStatus.visibility = View.GONE
             }
         }
@@ -592,9 +586,9 @@ class MainActivity : Activity() {
             tunnelManager.running -> "Stop Tunnel"
             tunnelManager.installing -> "Installing…"
             tunnelManager.installed -> "Start Tunnel"
-            else -> "Install Tunnel"
+            else -> "Start Tunnel"
         }
-        body.addView(helpRow("5. Tunnel: connect your agent to this phone. One-time download, about 38 MB.", tunnelLabel, !tunnelManager.installing) {
+        body.addView(helpRow("5. Tunnel: connect your agent to this phone.", tunnelLabel, !tunnelManager.installing) {
             onTunnelButton()
         })
         val done = TextView(this).apply {
