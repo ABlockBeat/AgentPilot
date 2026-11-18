@@ -923,10 +923,14 @@ class MainActivity : Activity() {
         }
         // Tunnel: the last message, the service, and the key.
         body.addView(sectionHeading("Tunnel"))
-        // The tunnel's last message, so a failure says WHY instead
-        // of only "Try again". The owner reads it and tells me.
+        // The tunnel's last raw message, so a failure says WHY instead
+        // of only "Try again". The raw line is kept apart from the
+        // plain error, so the error never overwrites it. The owner
+        // reads it and tells me.
         val tunnelLine = TextView(this).apply {
-            text = "Tunnel: " + (svc?.tunnelLastLine?.takeIf { it.isNotEmpty() } ?: "no messages yet")
+            text = "Tunnel: " + (svc?.tunnelRawLine?.takeIf { it.isNotEmpty() }
+                ?: svc?.tunnelLastLine?.takeIf { it.isNotEmpty() }
+                ?: "no messages yet")
             textSize = 13f
             setTextColor(getColor(R.color.secondary))
             setPadding(dp(0), dp(2), dp(0), dp(10))
