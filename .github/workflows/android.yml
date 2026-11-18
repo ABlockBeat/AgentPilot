@@ -50,5 +50,5 @@ jobs:
         with:
           tag_name: v0.4.5-${{ github.run_number }}
           name: Browser MCP v0.4.5 build ${{ github.run_number }}
-          body: "Browser MCP Android app, debug APK. New in 0.4.5: the app picker is a grid, 3 apps in a row, each with its official icon and name, only the important apps, Chrome first, no crypto apps, so there is no scrolling."
+          body: "Browser MCP Android app, debug APK. New in 0.4.5: the app picker is a grid, 3 apps in a row, each with its official icon and name, only the important apps, Chrome first, no crypto apps. Tap an app to select it, then tap Select to confirm."
           files: app/build/outputs/apk/debug/app-debug.apk
