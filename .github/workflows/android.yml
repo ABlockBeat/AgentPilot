@@ -80,7 +80,7 @@ jobs:
       - name: Publish release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.6.0-${{ github.run_number }}
-          name: AgentPilot v0.6.0 build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.0: the connection finally works end to end — saved token, session survives Back, hardened server, tunnel that stays up, action log, and more."
+          tag_name: v0.6.1-${{ github.run_number }}
+          name: AgentPilot v0.6.1 build ${{ github.run_number }}
+          body: "AgentPilot Android app, debug APK. New in 0.6.1: the GitHub account is now ABlockBeat, and the in-app update check uses the new name."
           files: app/build/outputs/apk/debug/app-debug.apk
