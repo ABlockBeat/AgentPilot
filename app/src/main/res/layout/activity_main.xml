@@ -100,6 +100,18 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
+    <Button
+        android:id="@+id/changeButton"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/rounded_button_outline"
+        android:text="Change app"
+        android:textColor="@color/accent"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/tunnelStatus"
         android:layout_width="match_parent"
