@@ -212,7 +212,6 @@ class MainActivity : Activity() {
             .filter { it.activityInfo.packageName != packageName }
         val important = listOf(
             "com.android.chrome",
-            "com.tradingview.tradingviewapp",
             "org.telegram.messenger",
             "com.twitter.android",
             "com.google.android.youtube",
