@@ -34,18 +34,20 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.0.
+ * AgentPilot, Android app, version 0.6.2.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
  * the next step: set up, turn on Accessibility, start, disconnect.
  *
- * Once a target app is picked, three small buttons appear under
+ * Once a target app is picked, two small buttons appear under
  * the main button, and only then: Continue to Chrome, so the
- * owner can log in by hand in the real browser, Tunnel, so the
- * owner's agent can reach this phone, and Change app, to switch
- * to another app while staying connected. A small Help button
- * sits at the bottom, next to Update when one exists. Help is a
+ * owner can log in by hand in the real browser, and Change app,
+ * to switch to another app while staying connected. One tap on
+ * Start connects everything: the tunnel starts by itself with
+ * the session and the link appears on its own. A Share connection
+ * button sits at the bottom, next to Help, only when the link
+ * exists, and it sends the link and the key together. Help is a
  * guided flow, not a reading list: every step is a row with a
  * button that does that step right there, one tap, no dead ends.
  *
@@ -65,10 +67,10 @@ import org.json.JSONObject
  * The tunnel lives inside the app, in TunnelManager. No Termux, no
  * download, no Play Store, no outside app at any point. The
  * cloudflared binary ships inside the APK and runs from there.
- * Start Tunnel opens the public link to the MCP server on this
- * phone. The tunnel only runs while the app is Running, and only
- * when the owner taps Start. If it drops while it is wanted, it
- * restarts by itself.
+ * The tunnel starts by itself when the session starts and stops
+ * with it. The public link to the MCP server on this phone
+ * appears on the home screen as soon as it exists. If the tunnel
+ * drops while it is wanted, it restarts by itself.
  *
  * The in-app WebView browser is gone. It was an option that did not
  * do the real work: exchanges detect a WebView and block logins, so
@@ -98,7 +100,7 @@ class MainActivity : Activity() {
     private lateinit var actionButton: Button
     private lateinit var updateButton: Button
     private lateinit var continueButton: Button
-    private lateinit var tunnelButton: Button
+    private lateinit var shareButton: Button
     private lateinit var changeButton: Button
     private lateinit var tunnelStatus: TextView
     private lateinit var helpButton: Button
@@ -145,14 +147,14 @@ class MainActivity : Activity() {
         actionButton = findViewById(R.id.actionButton)
         updateButton = findViewById(R.id.updateButton)
         continueButton = findViewById(R.id.continueButton)
-        tunnelButton = findViewById(R.id.tunnelButton)
+        shareButton = findViewById(R.id.shareButton)
         changeButton = findViewById(R.id.changeButton)
         tunnelStatus = findViewById(R.id.tunnelStatus)
         helpButton = findViewById(R.id.helpButton)
 
         actionButton.setOnClickListener { doNextStep() }
         continueButton.setOnClickListener { openTargetApp() }
-        tunnelButton.setOnClickListener { onTunnelButton() }
+        shareButton.setOnClickListener { shareConnection() }
         changeButton.setOnClickListener { showAppPicker() }
         tunnelStatus.setOnClickListener { copyTunnelUrl() }
         helpButton.setOnClickListener { showHelp() }
@@ -240,12 +242,13 @@ class MainActivity : Activity() {
      * One status line and one button, the whole interface. The
      * button always does the next step, so there is nothing to
      * figure out: set up, turn on Accessibility, start, disconnect.
-     * Once a target app is picked, three small buttons appear under
+     * Once a target app is picked, two small buttons appear under
      * the main button: Continue to Chrome, to log in by hand in
-     * the real browser, Tunnel, to connect the agent to this
-     * phone, and Change app, to switch the target while staying
-     * connected. Before a target is picked they stay hidden, so the
-     * home screen stays minimal.
+     * the real browser, and Change app, to switch the target while
+     * staying connected. Before a target is picked they stay
+     * hidden, so the home screen stays minimal. The tunnel starts
+     * by itself with the session, so there is no tunnel button:
+     * the link appears on its own and Share connection sends it.
      */
     private fun updateUi() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
@@ -277,13 +280,13 @@ class MainActivity : Activity() {
                 actionButton.text = "Start"
             }
         }
-        // The three small buttons only exist once a target is picked.
+        // The two small buttons only exist once a target is picked.
         // Continue to Chrome is the next step after Running: log in
-        // by hand. Then Tunnel connects the agent to this phone.
-        // Change app switches the target while staying connected.
+        // by hand. Change app switches the target while staying
+        // connected. The Share connection button lives in
+        // updateTunnelUi: it only shows once the link exists.
         val hasTarget = target.isNotEmpty()
         continueButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
-        tunnelButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
         changeButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
         if (hasTarget) {
             continueButton.text = if (target == "Chrome") "Continue to Chrome" else "Open $target"
@@ -471,7 +474,7 @@ class MainActivity : Activity() {
         ).show()
     }
 
-    // ---- Continue to Chrome, tunnel, and guided help ----
+    // ---- Continue to Chrome, tunnel status, and guided help ----
 
     /**
      * Open the picked target app, one tap, so the owner can log in
@@ -496,51 +499,42 @@ class MainActivity : Activity() {
     }
 
     /**
-     * The Tunnel button does whatever the tunnel needs next, one tap.
-     * If the session is off, the service starts it first, so one tap
-     * connects everything. Otherwise it stops the tunnel.
-     */
-    private fun onTunnelButton() {
-        if (service()?.tunnelRunning == true) {
-            sendServiceAction(KeepAliveService.ACTION_STOP_TUNNEL)
-            status("Tunnel stopped.")
-        } else {
-            sendServiceAction(KeepAliveService.ACTION_START_TUNNEL)
-        }
-        updateUi()
-    }
-
-    /**
-     * The Tunnel button label and the small tunnel status line always
+     * The tunnel status line and the Share connection button always
      * show the true state. The status line shows the public link
-     * only, or one short line while it starts or reconnects. No raw
-     * tunnel output on the home screen.
+     * once it exists, or one short line while it is on its way.
+     * Share connection only shows once the link exists, and it
+     * sends the link and the key together. No raw tunnel output
+     * on the home screen, and no tunnel button: the tunnel starts
+     * by itself with the session.
      */
     private fun updateTunnelUi() {
         val svc = service()
+        val url = svc?.tunnelUrl
         val installing = svc?.tunnelInstalling == true
         val running = svc?.tunnelRunning == true
         when {
             installing -> {
-                tunnelButton.isEnabled = false
-                tunnelButton.text = "Installing…"
                 tunnelStatus.visibility = View.VISIBLE
                 tunnelStatus.text = "Checking tunnel…"
+                shareButton.visibility = View.GONE
             }
             running -> {
-                tunnelButton.isEnabled = true
-                tunnelButton.text = "Stop Tunnel"
                 tunnelStatus.visibility = View.VISIBLE
                 tunnelStatus.text = if (svc?.tunnelRestarting == true) {
                     "Reconnecting…"
                 } else {
-                    svc?.tunnelUrl ?: "Starting tunnel…"
+                    url ?: "Connecting…"
                 }
+                shareButton.visibility = if (url != null) View.VISIBLE else View.GONE
+            }
+            sessionRunning() -> {
+                tunnelStatus.visibility = View.VISIBLE
+                tunnelStatus.text = "Connecting…"
+                shareButton.visibility = View.GONE
             }
             else -> {
-                tunnelButton.isEnabled = true
-                tunnelButton.text = "Start Tunnel"
                 tunnelStatus.visibility = View.GONE
+                shareButton.visibility = View.GONE
             }
         }
     }
@@ -693,14 +687,15 @@ class MainActivity : Activity() {
         body.addView(helpRow("4. Continue to Chrome and log in by hand.", continueLabel, hasTarget) {
             openTargetApp()
         })
-        val tunnelLabel = when {
-            svc?.tunnelRunning == true -> "Stop Tunnel"
-            svc?.tunnelInstalling == true -> "Installing…"
-            else -> "Start Tunnel"
+        // The tunnel starts by itself with the session. There is
+        // no tunnel button anymore: the link appears on the home
+        // screen and Share connection sends it with the key.
+        val tunnelNote = TextView(this).apply {
+            text = "5. The tunnel starts by itself when the app starts. The link appears on the home screen."
+            textSize = 15f
+            setPadding(dp(0), dp(10), dp(0), dp(10))
         }
-        body.addView(helpRow("5. Tunnel: connect your agent to this phone.", tunnelLabel, svc?.tunnelInstalling != true) {
-            onTunnelButton()
-        })
+        body.addView(tunnelNote)
         // The connection key, shown in full, tap to copy. The agent
         // needs this key together with the tunnel link.
         val keyLabel = TextView(this).apply {
