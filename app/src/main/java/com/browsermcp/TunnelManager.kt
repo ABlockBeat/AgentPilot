@@ -29,7 +29,7 @@ import kotlin.concurrent.thread
  * - Start: run "cloudflared tunnel --url http://127.0.0.1:8765".
  *   The MCP server must already be listening on 8765, so the tunnel
  *   only starts while the app is Running. The first
- *   https://*.trycloudflare.com URL in the output is the public
+ *   trycloudflare.com URL in the output is the public
  *   link, shown in the app and tappable to copy.
  * - Stop: kill the process. The tunnel is also stopped when the app
  *   is destroyed, and when the drive session stops.
