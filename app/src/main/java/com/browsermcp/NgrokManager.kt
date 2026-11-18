@@ -13,7 +13,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * ngrok tunnel for AgentPilot, version 0.6.7.
+ * ngrok tunnel for AgentPilot, version 0.6.12.
  *
  * The second tunnel, for phones where Cloudflare does not start.
  * ngrok is free with an account: the owner signs up once at
@@ -32,7 +32,11 @@ import org.json.JSONObject
  * - Link: ngrok prints its public link in the log, and it also
  *   serves it on its own local API at 127.0.0.1 port 4040. The
  *   API is tried first, the log is the backup. Whichever finds
- *   the link first wins.
+ *   the link first wins. If neither gives a link within 60
+ *   seconds, the tunnel is stopped and the error says so plainly,
+ *   instead of showing Connecting forever. The ngrok agent
+ *   retries its own connection forever, so without this it would
+ *   never report a failure.
  * - Stay up: if the tunnel process dies while the tunnel is
  *   wanted, it restarts by itself with backoff, a few tries, and
  *   only then gives up.
@@ -69,6 +73,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
 
     @Volatile private var wanted: Boolean = false
     @Volatile private var urlSent: Boolean = false
+    @Volatile private var timeoutReported: Boolean = false
 
     @Volatile override var restarting: Boolean = false
         private set
@@ -198,14 +203,23 @@ class NgrokManager(private val context: Context) : TunnelBackend {
         }
     }
 
-    /** Poll the local API until the link appears or the tunnel goes away. */
+    /**
+     * Poll the local API until the link appears or the tunnel goes away.
+     * If 30 tries (60 seconds) pass with no link, the tunnel is stuck:
+     * the ngrok agent retries its own connection forever and never
+     * reports a failure, so this thread reports it and stops the
+     * tunnel, instead of leaving Connecting on screen forever. The
+     * poll watches only the process it started with, so a restart
+     * in between cannot make it kill the new process.
+     */
     private fun pollLocalApi(onUrl: (String) -> Unit) {
+        val myProc = process
         thread {
             var tries = 0
             while (tries < 30) {
                 if (!wanted) return@thread
                 val proc = process
-                if (proc == null || !proc.isAlive) return@thread
+                if (proc == null || proc !== myProc || !proc.isAlive) return@thread
                 if (urlSent) return@thread
                 val found = fetchTunnelUrlFromApi()
                 if (found != null) {
@@ -219,6 +233,11 @@ class NgrokManager(private val context: Context) : TunnelBackend {
                     return@thread
                 }
             }
+            if (!wanted || urlSent) return@thread
+            if (process !== myProc || myProc == null || !myProc.isAlive) return@thread
+            timeoutReported = true
+            mainHandler.post { onError("ngrok did not give a link in 60 seconds. Check the key in Help, or try mobile data.") }
+            stop()
         }
     }
 
@@ -240,6 +259,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
                 val proc = builder.start()
                 process = proc
                 urlSent = false
+                timeoutReported = false
                 pollLocalApi(onUrl)
                 var lastLine = ""
                 proc.inputStream.bufferedReader().useLines { lines ->
@@ -258,7 +278,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
                 if (!wanted) {
                     running = false
                     restarting = false
-                    if (!urlSent) {
+                    if (!urlSent && !timeoutReported) {
                         val detail = if (lastLine.isNotEmpty()) lastLine.take(120) else "exit code $code"
                         mainHandler.post { onError("Tunnel stopped: $detail") }
                     }
@@ -289,7 +309,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
                     running = false
                     restarting = false
                     val msg = e.message ?: "error"
-                    mainHandler.post { onError(msg) }
+                    if (!timeoutReported) mainHandler.post { onError(msg) }
                     mainHandler.post { onStopped() }
                     return@thread
                 }
