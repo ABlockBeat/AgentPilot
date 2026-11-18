@@ -15,7 +15,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * AgentPilot, session owner, version 0.6.0.
+ * AgentPilot, session owner, version 0.6.2.
  *
  * This service owns the whole connection: the MCP server, the
  * tunnel, and the log of what the agent did. It is a started
@@ -32,10 +32,11 @@ import java.util.Locale
  *   changes, so the Activity refreshes without polling.
  * - The MCP server binds 127.0.0.1 port 8765 with the bearer token
  *   saved in prefs. The token never changes on its own.
- * - The tunnel only runs while the session is Running, and only
- *   after the owner taps Tunnel. It never starts by itself on a
- *   cold start: after the process dies and the service restarts,
- *   the MCP server comes back, the tunnel waits for his tap.
+ * - The tunnel starts by itself with the session and stops with
+ *   it. One tap on Start connects everything: server and tunnel
+ *   together, no separate tunnel step. After the process dies and
+ *   the service restarts, the session comes back if the owner had
+ *   it on, and the tunnel comes back with it.
  * - If the tunnel process dies while it is wanted, it restarts by
  *   itself with backoff, a few tries.
  * - A watchdog checks the Accessibility service every few seconds
@@ -133,8 +134,7 @@ class KeepAliveService : Service() {
             null -> {
                 // The system restarted the service after the process
                 // died. Bring the session back if the owner had it
-                // on. The tunnel waits for his tap, it never starts
-                // by itself on a cold start.
+                // on. The tunnel comes back with the session.
                 if (prefs.getBoolean(KEY_SESSION_WANTED, false)) startSession()
             }
             else -> { }
@@ -159,7 +159,10 @@ class KeepAliveService : Service() {
     /**
      * Start the MCP server with the saved token. The bind happens
      * on this thread, so a failure is known at once and the session
-     * is never claimed Running while the server is dead.
+     * is never claimed Running while the server is dead. The tunnel
+     * starts by itself right after the server, so one tap connects
+     * everything. If the tunnel is already running, starting it
+     * again is a no-op.
      */
     private fun startSession() {
         if (sessionRunning) return
@@ -186,6 +189,9 @@ class KeepAliveService : Service() {
         broadcastState()
         mainHandler.removeCallbacks(watchdogRunnable)
         mainHandler.post(watchdogRunnable)
+        // One tap connects everything: the tunnel starts by itself
+        // with the session, no separate step for the owner.
+        startTunnelFlow()
     }
 
     private fun stopSession() {
@@ -222,9 +228,10 @@ class KeepAliveService : Service() {
     // ---- Tunnel ----
 
     /**
-     * One tap connects everything: if the session is off, it starts
-     * first, then the tunnel. The tunnel check runs, then the tunnel
-     * starts by itself.
+     * Start the tunnel to the local MCP server. Called by itself
+     * when the session starts, so the owner never taps a tunnel
+     * button. If the session is off, it starts first, then the
+     * tunnel. The tunnel check runs, then the tunnel starts.
      */
     private fun startTunnelFlow() {
         if (!sessionRunning) startSession()
