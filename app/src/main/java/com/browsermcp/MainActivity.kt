@@ -27,6 +27,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -34,7 +35,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.3.
+ * AgentPilot, Android app, version 0.6.5.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -106,6 +107,9 @@ class MainActivity : Activity() {
     private lateinit var helpButton: Button
     private var updateDownloadUrl: String = ""
     private var updateVersion: String = ""
+    private var downloading: Boolean = false
+    private var transientStatus: String? = null
+    private var transientUntil: Long = 0
     private lateinit var prefs: SharedPreferences
     private var autoStartTries: Int = 0
     private var autoStartScheduled: Boolean = false
@@ -160,7 +164,17 @@ class MainActivity : Activity() {
         helpButton.setOnClickListener { showHelp() }
 
         updateButton.setOnClickListener {
-            if (updateDownloadUrl.isNotEmpty()) downloadUpdate(updateDownloadUrl)
+            when {
+                downloading -> status("Downloading update... please wait.")
+                updateDownloadUrl.isNotEmpty() -> downloadUpdate(updateDownloadUrl)
+                else -> {
+                    // The launch-time check never armed a download
+                    // link (offline, or the check failed): a tap must
+                    // never do nothing. Say so and check again now.
+                    status("Checking for update...")
+                    checkForUpdate(manual = true)
+                }
+            }
         }
 
         // The connection key is generated once, the first time the
@@ -187,6 +201,9 @@ class MainActivity : Activity() {
         autoStartTries = 0
         updateUi()
         maybeAutoStartMcp()
+        // A launch-time update check that failed (offline at the
+        // time) gets another chance whenever the owner comes back.
+        if (updateDownloadUrl.isEmpty()) checkForUpdate()
     }
 
     override fun onPause() {
@@ -213,7 +230,15 @@ class MainActivity : Activity() {
     }
 
     fun status(text: String) {
-        runOnUiThread { Toast.makeText(this, text, Toast.LENGTH_SHORT).show() }
+        // The message also stays on the home screen for a few seconds:
+        // a toast alone vanishes before the owner reads it, and the
+        // next state refresh used to wipe it at once.
+        transientStatus = text
+        transientUntil = System.currentTimeMillis() + 8000
+        runOnUiThread {
+            statusText.text = text
+            Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -294,6 +319,13 @@ class MainActivity : Activity() {
         changeButton.visibility = if (hasTarget) View.VISIBLE else View.GONE
         if (hasTarget) {
             continueButton.text = if (target == "Chrome") "Continue to Chrome" else "Open $target"
+        }
+        // A fresh message from status() stays on screen for a few
+        // seconds instead of being wiped by the next state refresh.
+        if (transientStatus != null && System.currentTimeMillis() < transientUntil) {
+            statusText.text = transientStatus
+        } else {
+            transientStatus = null
         }
         updateTunnelUi()
     }
@@ -766,7 +798,15 @@ class MainActivity : Activity() {
      * If that install is dismissed, the Update button stays for a retry.
      * Fails silently when offline, never blocks the UI.
      */
-    private fun checkForUpdate() {
+    /**
+     * Check GitHub for a newer release. When one is found the Update
+     * button appears with the download link armed. A tap on the button
+     * installs from the already downloaded APK when it is good, so the
+     * owner never waits on a 21 MB download twice. A launch-time
+     * (automatic) check fails silently, as before. A manual check,
+     * from a tap on Update, always says what happened.
+     */
+    private fun checkForUpdate(manual: Boolean = false) {
         thread {
             try {
                 val conn = URL("https://api.github.com/repos/ABlockBeat/AgentPilot/releases/latest").openConnection() as HttpURLConnection
@@ -774,15 +814,28 @@ class MainActivity : Activity() {
                 conn.readTimeout = 8000
                 conn.setRequestProperty("User-Agent", "AgentPilot")
                 conn.setRequestProperty("Accept", "application/vnd.github+json")
-                if (conn.responseCode != 200) return@thread
+                if (conn.responseCode != 200) {
+                    if (manual) status("Could not check for updates. Check your connection and try again.")
+                    return@thread
+                }
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val release = JSONObject(body)
                 val tag = release.optString("tag_name", "")
                 val releaseVersion = tag.removePrefix("v").substringBefore("-")
                 val current = currentVersionName()
-                if (releaseVersion.isEmpty() || current.isEmpty()) return@thread
-                if (compareVersions(releaseVersion, current) <= 0) return@thread
-                val assets = release.optJSONArray("assets") ?: return@thread
+                if (releaseVersion.isEmpty() || current.isEmpty()) {
+                    if (manual) status("Could not check for updates. Check your connection and try again.")
+                    return@thread
+                }
+                if (compareVersions(releaseVersion, current) <= 0) {
+                    if (manual) status("You already have the latest version.")
+                    return@thread
+                }
+                val assets = release.optJSONArray("assets")
+                if (assets == null) {
+                    if (manual) status("Could not check for updates. Check your connection and try again.")
+                    return@thread
+                }
                 var downloadUrl = ""
                 for (i in 0 until assets.length()) {
                     val asset = assets.getJSONObject(i)
@@ -791,19 +844,21 @@ class MainActivity : Activity() {
                         break
                     }
                 }
-                if (downloadUrl.isEmpty()) return@thread
+                if (downloadUrl.isEmpty()) {
+                    if (manual) status("Could not check for updates. Check your connection and try again.")
+                    return@thread
+                }
                 updateDownloadUrl = downloadUrl
                 updateVersion = releaseVersion
-                val cachedVersion = prefs.getString("updateCachedVersion", "") ?: ""
-                val installerShown = prefs.getString("updateInstallerShown", "") ?: ""
-                val cachedApk = File(cacheDir, "update.apk")
                 runOnUiThread { updateButton.visibility = View.VISIBLE }
-                // Already downloaded and the installer was already shown
-                // once for this version: leave the button for a manual retry.
-                if (cachedApk.exists() && cachedVersion == releaseVersion && installerShown == releaseVersion) return@thread
+                // Already downloaded and verified for this version:
+                // do not download 21 MB again, the tap installs it.
+                if (cachedApkOk(releaseVersion)) return@thread
                 downloadUpdate(downloadUrl, auto = true)
             } catch (e: Exception) {
-                // Offline or any error: no Update button, nothing shown.
+                // Offline or any error: an automatic check stays
+                // silent, as before. A manual check says so.
+                if (manual) status("Could not check for updates. Check your connection and try again.")
             }
         }
     }
@@ -830,11 +885,42 @@ class MainActivity : Activity() {
         }
     }
 
+    /** True when the cached APK is for this version and looks whole:
+     * at least 10 MB and a real APK (ZIP magic "PK"). A download cut
+     * short fails this instead of opening a broken installer. */
+    private fun apkFileOk(f: File): Boolean {
+        if (!f.exists() || f.length() < 10_000_000L) return false
+        return try {
+            FileInputStream(f).use { input ->
+                val magic = ByteArray(2)
+                input.read(magic) == 2 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte()
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun cachedApkOk(version: String): Boolean {
+        val cachedVersion = prefs.getString("updateCachedVersion", "") ?: ""
+        if (cachedVersion != version) return false
+        return apkFileOk(File(cacheDir, "update.apk"))
+    }
+
     /** Download the release APK to the cache, then open the installer.
-     * Auto downloads fail silently (the Update button stays for a retry);
-     * a manual tap reports the failure in plain words. */
+     * A tap never re-downloads a good cached APK: it installs it at
+     * once. Auto downloads fail silently (the Update button stays for
+     * a retry); a manual tap reports the failure in plain words. */
     private fun downloadUpdate(downloadUrl: String, auto: Boolean = false) {
-        updateButton.isEnabled = false
+        if (downloading) {
+            if (!auto) status("Downloading update... please wait.")
+            return
+        }
+        // A good cached APK for this version installs at once.
+        if (updateVersion.isNotEmpty() && cachedApkOk(updateVersion)) {
+            runOnUiThread { installApk(File(cacheDir, "update.apk")) }
+            return
+        }
+        downloading = true
         updateButton.text = "Downloading..."
         thread {
             try {
@@ -847,14 +933,19 @@ class MainActivity : Activity() {
                 conn.inputStream.use { input ->
                     FileOutputStream(apkFile).use { output -> input.copyTo(output) }
                 }
+                if (!apkFileOk(apkFile)) {
+                    apkFile.delete()
+                    throw RuntimeException("Download incomplete")
+                }
                 prefs.edit()
                     .putString("updateCachedVersion", updateVersion)
                     .putString("updateInstallerShown", updateVersion)
                     .apply()
+                downloading = false
                 runOnUiThread { installApk(apkFile) }
             } catch (e: Exception) {
+                downloading = false
                 runOnUiThread {
-                    updateButton.isEnabled = true
                     updateButton.text = "Update"
                     if (!auto) status("Update failed. Try again.")
                 }
@@ -863,13 +954,19 @@ class MainActivity : Activity() {
     }
 
     private fun installApk(apkFile: File) {
-        updateButton.isEnabled = true
         updateButton.text = "Update"
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            // The installer could not open (installs from this app
+            // not allowed, or no handler): say so in plain words
+            // instead of crashing.
+            status("Could not open the installer. Allow installs from AgentPilot in Settings, then tap Update again.")
         }
-        startActivity(intent)
     }
 }
