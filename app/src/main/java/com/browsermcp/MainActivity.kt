@@ -1,3 +1,5 @@
+// Copyright (c) 2026 ABlockBeat. All rights reserved.
+
 package com.browsermcp
 
 import android.app.Activity
@@ -35,7 +37,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.5.
+ * AgentPilot, Android app, version 0.6.6.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
