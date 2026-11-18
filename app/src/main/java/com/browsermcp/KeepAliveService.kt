@@ -86,6 +86,7 @@ class KeepAliveService : Service() {
     @Volatile var a11yDead: Boolean = false
         private set
     @Volatile private var lastTunnelLine: String = ""
+    @Volatile private var lastTunnelError: String = ""
 
     /** Cloudflare is the default; ngrok is the alternative. */
     private fun activeTunnel(): TunnelBackend =
@@ -97,6 +98,7 @@ class KeepAliveService : Service() {
     val tunnelRestarting: Boolean get() = activeTunnel().restarting
     val tunnelUrl: String? get() = activeTunnel().publicUrl
     val tunnelLastLine: String get() = lastTunnelLine
+    val tunnelError: String get() = lastTunnelError
 
     /** The action log, newest first, for the Help screen. */
     fun actionLogSnapshot(): List<String> = synchronized(actionLog) { actionLog.toList() }
@@ -255,6 +257,7 @@ class KeepAliveService : Service() {
     private fun startTunnelFlow() {
         if (!sessionRunning) startSession()
         if (!sessionRunning) return
+        lastTunnelError = ""
         val tunnel = activeTunnel()
         if (tunnel.running || tunnel.installing) return
         if (prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "ngrok" &&
@@ -274,6 +277,7 @@ class KeepAliveService : Service() {
     private fun launchTunnel() {
         activeTunnel().start(
             onUrl = {
+                lastTunnelError = ""
                 logAction("Tunnel started")
                 updateFloatingOverlay()
                 broadcastState()
@@ -299,6 +303,7 @@ class KeepAliveService : Service() {
     private fun onTunnelError(raw: String) {
         lastTunnelLine = "Error: $raw"
         val plain = plainTunnelError(raw)
+        lastTunnelError = plain
         logAction("Tunnel error: $raw")
         broadcastState(error = plain)
     }
