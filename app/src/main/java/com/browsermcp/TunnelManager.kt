@@ -1,3 +1,5 @@
+// Copyright (c) 2026 ABlockBeat. All rights reserved.
+
 package com.browsermcp
 
 import android.content.Context
@@ -8,7 +10,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * Built-in tunnel for AgentPilot, version 0.6.2.
+ * Built-in tunnel for AgentPilot, version 0.6.6.
  *
  * The tunnel lives inside the app. No Termux, no download, no Play
  * Store, no outside app at any point. The cloudflared binary ships
@@ -32,6 +34,8 @@ import kotlin.concurrent.thread
  *   be listening on 8765, so the tunnel only starts while the app
  *   is Running. The first trycloudflare.com URL in the output is
  *   the public link, shown in the app and tappable to copy.
+ *   Cloudflare's own API host api.trycloudflare.com also matches
+ *   that shape, so the matcher skips it: it is not a tunnel.
  * - Stay up: if the tunnel process dies while the tunnel is
  *   wanted, it restarts by itself with backoff, a few tries, and
  *   only then gives up. A network change or a doze must not leave
@@ -59,7 +63,7 @@ class TunnelManager(private val context: Context) {
     companion object {
         private const val BINARY_NAME = "libcloudflared.so"
         private const val MAX_RESTARTS = 5
-        private val TUNNEL_URL_REGEX = Regex("https://[A-Za-z0-9-]+\\.trycloudflare\\.com")
+        private val TUNNEL_URL_REGEX = Regex("https://(?!api\\.)[A-Za-z0-9-]+\\.trycloudflare\\.com")
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
