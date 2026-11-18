@@ -75,4 +75,58 @@
         android:textColor="@color/white"
         android:textSize="17sp"
         android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/continueButton"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/rounded_button_outline"
+        android:text="Continue to Chrome"
+        android:textColor="@color/accent"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/tunnelButton"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/rounded_button_outline"
+        android:text="Install Tunnel (~38 MB, once)"
+        android:textColor="@color/accent"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tunnelStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@color/field"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:padding="10dp"
+        android:textColor="@color/text"
+        android:textSize="13sp"
+        android:typeface="monospace"
+        android:visibility="gone" />
+
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <Button
+        android:id="@+id/helpButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@android:color/transparent"
+        android:minHeight="40dp"
+        android:text="Help"
+        android:textColor="@color/secondary"
+        android:textSize="15sp" />
 </LinearLayout>
