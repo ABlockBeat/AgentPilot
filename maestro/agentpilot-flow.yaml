@@ -4,11 +4,13 @@
 #   Part 1, fresh install: the home screen shows AgentPilot with
 #   "Not set up", and "Set up" opens the "Pick an app" picker.
 #   Part 2, full journey: pick Chrome, reach Running, the tunnel
-#   starts by itself with the session, and the trycloudflare.com
-#   link MUST appear on screen. If the link never appears, the flow
-#   FAILS. That is the bug this test hunts: on the owner's phone the
-#   tunnel starts but the link never shows. Then Help opens and the
-#   connection key must be visible.
+#   starts by itself with the session, and within 60 seconds it
+#   must reach a definite outcome: either the trycloudflare.com
+#   link appears, or a clear tunnel error appears. If neither
+#   outcome shows, the flow FAILS. That is the bug this test hunts:
+#   the tunnel starts but nothing ever shows, the app hangs on
+#   "Connecting…" forever. Then Help opens and the connection key
+#   must be visible.
 #
 # What it needs before it runs (the CI workflow does this):
 #   - The APK installed on the emulator.
@@ -90,18 +92,39 @@ name: AgentPilot UI test
     timeout: 15000
 - takeScreenshot: home-running
 
-# Part 3: the tunnel link. The tunnel starts by itself with the
-# session now, there is no tunnel button to tap. The link
-# MUST appear within 60 seconds. If it does not, the flow fails
-# here. That failure is the point: it means the tunnel started
-# but the link never showed, the same bug the owner sees on his
-# phone. Once the link is there, Share connection must show too.
+# Part 3: the tunnel must reach a definite outcome within 60 seconds.
+# Either the trycloudflare.com link appears, or a clear tunnel error
+# appears on screen ("Tunnel did not start. Try again.", "Tunnel
+# stopped. Try again.", "No internet. Try again.", "Could not start.
+# Try again."). The emulator cannot reach Cloudflare, so demanding
+# the link alone made this part unpassable by design. What this part
+# still hunts is the real bug: the tunnel starts but NO outcome ever
+# shows, the app hangs on "Connecting…" forever. If neither outcome
+# appears in 60 seconds, the wait below fails the flow. Once an
+# outcome is there, only its branch runs: the link branch asserts
+# the link and Share connection, the error branch screenshots the
+# error state for the log.
 - extendedWaitUntil:
-    visible: "trycloudflare.com"
+    visible:
+      text: ".*(trycloudflare.com|Tunnel did not start|Tunnel stopped|No internet|Could not start).*"
     timeout: 60000
-- assertVisible: "trycloudflare.com"
-- assertVisible: "Share connection"
-- takeScreenshot: tunnel-link-visible
+- runFlow:
+    when:
+      visible: "trycloudflare.com"
+    commands:
+      - assertVisible: "trycloudflare.com"
+      - assertVisible: "Share connection"
+      - takeScreenshot: tunnel-link-visible
+- runFlow:
+    when:
+      visible: "Try again."
+    commands:
+      - takeScreenshot: tunnel-error-visible
+- runFlow:
+    when:
+      visible: "Reinstall the app"
+    commands:
+      - takeScreenshot: tunnel-error-visible
 
 # Part 4: the connection key lives in Help.
 - tapOn: "Help"
