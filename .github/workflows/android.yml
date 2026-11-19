@@ -106,5 +106,5 @@ jobs:
         with:
           tag_name: v${{ steps.appversion.outputs.name }}-${{ github.run_number }}
           name: AgentPilot v${{ steps.appversion.outputs.name }} build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.22: our own connector is now the primary connection. The phone and the cloud both dial out to our own relay, which forwards the MCP messages between them; no Cloudflare, no ngrok, no Tailscale, no outside tunnel service. Cloudflare and ngrok stay as fallback. A hidden TEST screen in Settings shows the relay URL, the connector state, and the phone's IPv6 addresses. The relay URL is still a placeholder until a host is set."
+          body: "AgentPilot Android app, debug APK. New in 0.6.23: Tor is now a tunnel service. With Orbot installed from F-Droid (free, no account), AgentPilot asks Orbot once for a v3 onion service and the phone gets a .onion address; the cloud reaches the phone through Tor, no relay host, no Cloudflare, no ngrok, no Tailscale. The .onion address shows in Settings next to the tunnel link, and in the copy and share text. The TEST screen in Settings shows the Tor state. Our own connector, Cloudflare, ngrok and Tailscale stay as the other services. The relay URL is still a placeholder until a host is set."
           files: app/build/outputs/apk/debug/app-debug.apk
