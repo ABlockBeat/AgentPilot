@@ -11,9 +11,9 @@ android {
         applicationId = "com.browsermcp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 34
-        versionName = "0.6.19"
-        // The embedded Tailscale node ships arm64-v8a only: every
+        versionCode = 35
+        versionName = "0.6.20"
+        // The tunnel binaries ship arm64-v8a only: every
         // Android device sold in the last five years is arm64, and
         // the owner's phone is arm64. One ABI keeps the APK small.
         ndk {
@@ -76,8 +76,9 @@ dependencies {
     // APK to the system installer. Free, from Google Maven, no account.
     // org.json is bundled in Android, no download.
     implementation("androidx.core:core:1.13.1")
-    // The embedded Tailscale node, bound with gomobile bind in CI
-    // (see .github/workflows/android.yml) and never committed. The
-    // AAR must exist before Gradle runs, or the build fails here.
-    implementation(files("libs/agentpilot-tailnet.aar"))
+    // EncryptedSharedPreferences, for the MCP bearer token and the
+    // ngrok authtoken. Plain SharedPreferences are readable by any
+    // app with root and travel out in a backup, so the secrets live
+    // only in this encrypted store. Free, from Google Maven.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }
