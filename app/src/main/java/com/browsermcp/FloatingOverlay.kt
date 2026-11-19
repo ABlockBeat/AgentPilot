@@ -16,7 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 
 /**
- * Floating window for AgentPilot, version 0.6.23.
+ * Floating window for AgentPilot, version 0.6.24.
  *
  * A small window over other apps, so the owner can see the
  * connection state and the tunnel link while the agent drives
