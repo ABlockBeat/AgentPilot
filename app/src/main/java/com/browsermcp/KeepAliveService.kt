@@ -12,14 +12,16 @@ import android.content.SharedPreferences
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.concurrent.thread
 
 /**
- * AgentPilot, session owner, version 0.6.7.
+ * AgentPilot, session owner, version 0.6.19.
  *
  * This service owns the whole connection: the MCP server, the
  * tunnel, and the log of what the agent did. It is a started
@@ -63,6 +65,7 @@ class KeepAliveService : Service() {
         const val ACTION_START_TUNNEL = "com.browsermcp.START_TUNNEL"
         const val ACTION_STOP_TUNNEL = "com.browsermcp.STOP_TUNNEL"
         const val ACTION_RESTART_SERVER = "com.browsermcp.RESTART_SERVER"
+        const val ACTION_RETURN_TO_PREVIOUS = "com.browsermcp.RETURN_TO_PREVIOUS"
         const val EXTRA_ERROR = "error"
         const val KEY_SESSION_WANTED = "session_wanted"
         const val KEY_TUNNEL_BACKEND = "tunnel_backend"
@@ -182,6 +185,17 @@ class KeepAliveService : Service() {
             ACTION_START_TUNNEL -> startTunnelFlow()
             ACTION_STOP_TUNNEL -> stopTunnel()
             ACTION_RESTART_SERVER -> restartServer()
+            ACTION_RETURN_TO_PREVIOUS -> thread {
+                // The notification's "Back to my app" action. It
+                // runs off the main thread: the return takes a
+                // second of settle time, and a tap must never
+                // freeze the screen.
+                try {
+                    DriveService.instance?.returnToPrevious()
+                } catch (e: Exception) {
+                    Log.w("AgentPilot", "Return to previous app failed", e)
+                }
+            }
             null -> {
                 // The system restarted the service after the process
                 // died. Bring the session back if the owner had it
@@ -251,6 +265,16 @@ class KeepAliveService : Service() {
     }
 
     private fun stopSession() {
+        // Put him back where he was before the session took his
+        // screen. A failed return never blocks the stop: the
+        // session still ends, the tunnels still stop, the server
+        // still stops. The return runs first, while the service
+        // is still alive to do it.
+        try {
+            DriveService.instance?.returnToPrevious()
+        } catch (e: Exception) {
+            Log.w("AgentPilot", "Return to previous app failed", e)
+        }
         mainHandler.removeCallbacks(watchdogRunnable)
         tunnelManager.stop()
         ngrokManager.stop()
@@ -424,11 +448,22 @@ class KeepAliveService : Service() {
             this, 0, openApp,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        // Second action: put him back in the app he was using
+        // before the session took his screen, one tap, no need
+        // to open AgentPilot first.
+        val returnIntent = Intent(this, KeepAliveService::class.java).apply {
+            action = ACTION_RETURN_TO_PREVIOUS
+        }
+        val returnTap = PendingIntent.getService(
+            this, 1, returnIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("AgentPilot is on")
             .setContentText(text)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(tap)
+            .addAction(Notification.Action.Builder(null, "Back to my app", returnTap).build())
             .build()
     }
 
