@@ -31,7 +31,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.9.
+ * AgentPilot, drive engine, version 0.6.19.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -103,6 +103,26 @@ class DriveService : AccessibilityService() {
     @Volatile
     private var currentPackage = ""
 
+    /**
+     * The app he was using before the target took the screen.
+     * Recorded on every window change (see onAccessibilityEvent).
+     * When a drive session ends, returnToPrevious() puts him back
+     * there, so the phone does not sit in Chrome after the work
+     * is done. Empty when nothing was recorded, for example when
+     * he started from the AgentPilot screen itself.
+     */
+    @Volatile
+    private var returnPackage = ""
+
+    /**
+     * While a drive_batch runs, the per-action idle pauses are
+     * skipped and the settle sleeps are capped, so a whole post
+     * lands in one short burst. Set only by the batch tool, always
+     * reset in a finally block. Single actions are unaffected.
+     */
+    @Volatile
+    var batchMode = false
+
     override fun onCreate() {
         super.onCreate()
         // Diagnostic only: the UI test kept showing "Accessibility
@@ -134,7 +154,20 @@ class DriveService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            event.packageName?.let { currentPackage = it.toString() }
+            val pkg = event.packageName?.toString() ?: ""
+            if (pkg.isNotEmpty()) {
+                // Remember the last app he was actually using, so
+                // the session can put him back there when it ends.
+                // The target itself is where the work happens, our
+                // own app is only a doorway, and system UI has
+                // nothing to return to, so none of those is ever
+                // recorded as the return target.
+                if (pkg != targetPackage() && pkg != packageName &&
+                    pkg != "com.android.systemui") {
+                    returnPackage = pkg
+                }
+                currentPackage = pkg
+            }
         }
     }
 
@@ -161,7 +194,22 @@ class DriveService : AccessibilityService() {
             .getString(KEY_TARGET_PACKAGE, "") ?: ""
 
     private fun pause() {
+        // In a batch there is no idle gap between actions.
+        if (batchMode) return
         Thread.sleep(Random.nextLong(200, 700))
+    }
+
+    /**
+     * Settle time after an action, so the screen catches up
+     * before the next step reads it. In a batch the UI still
+     * needs a beat, but not the full human pause: 200 ms is
+     * enough for a view update on this phone, and it keeps a
+     * multi-step burst to seconds instead of tens of seconds.
+     * App launches keep their full settle (see openApp/openUrl),
+     * because a cold app needs longer than a view update.
+     */
+    private fun settle(ms: Long) {
+        Thread.sleep(if (batchMode) minOf(ms, 200) else ms)
     }
 
     /**
@@ -346,7 +394,7 @@ class DriveService : AccessibilityService() {
             hit
         }
         if (found == null) throw RuntimeException("No tappable text found: $text")
-        Thread.sleep(800)
+        settle(800)
         return mapOf("ok" to true, "tapped" to found)
     }
 
@@ -356,7 +404,7 @@ class DriveService : AccessibilityService() {
         if (!gestureTap(x.toFloat(), y.toFloat())) {
             throw RuntimeException("Tap failed at $x,$y")
         }
-        Thread.sleep(500)
+        settle(500)
         return mapOf("ok" to true, "x" to x, "y" to y)
     }
 
@@ -405,7 +453,7 @@ class DriveService : AccessibilityService() {
             matched
         }
         if (matched == null) throw RuntimeException("No editable field matching: $field")
-        Thread.sleep(500)
+        settle(500)
         return mapOf("ok" to true, "field" to matched)
     }
 
@@ -448,7 +496,7 @@ class DriveService : AccessibilityService() {
             }
             if (!hit) break
             scrolled = true
-            Thread.sleep(300)
+            settle(300)
         }
         if (!scrolled) {
             // No scrollable node on this screen. Fall back to a swipe.
@@ -458,7 +506,7 @@ class DriveService : AccessibilityService() {
             val y2 = if (forward) (size[1] * 0.3).toInt() else (size[1] * 0.7).toInt()
             for (i in 1..steps) {
                 swipe(cx, y1, cx, y2, 300)
-                Thread.sleep(200)
+                settle(200)
             }
             return mapOf("ok" to true, "method" to "swipe")
         }
@@ -477,7 +525,7 @@ class DriveService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration.toLong()))
             .build()
         if (!dispatchGestureResult(desc)) throw RuntimeException("Swipe failed")
-        Thread.sleep(400)
+        settle(400)
         return mapOf("ok" to true)
     }
 
@@ -659,7 +707,7 @@ class DriveService : AccessibilityService() {
         if (!performGlobalAction(GLOBAL_ACTION_BACK)) {
             throw RuntimeException("Back failed")
         }
-        Thread.sleep(400)
+        settle(400)
         return mapOf("ok" to true)
     }
 
@@ -668,8 +716,37 @@ class DriveService : AccessibilityService() {
         if (!performGlobalAction(GLOBAL_ACTION_HOME)) {
             throw RuntimeException("Home failed")
         }
-        Thread.sleep(400)
+        settle(400)
         return mapOf("ok" to true)
+    }
+
+    /**
+     * Put the owner back in the app he was using before the
+     * target took the screen. The package was recorded on every
+     * window change, so this is the last real app he was in, not
+     * a guess. The home screen counts as Home, not an app to
+     * relaunch, and an app that cannot be opened falls back to
+     * Home too. It never fails the caller: a return that cannot
+     * happen just leaves him where he is. It cannot restore the
+     * exact screen inside his app, only the app itself.
+     */
+    fun returnToPrevious(): Map<String, Any> {
+        val pkg = returnPackage
+        if (pkg.isEmpty()) return pressHome()
+        val home = packageManager.resolveActivity(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0
+        )?.activityInfo?.packageName
+        if (pkg == home) return pressHome()
+        val intent = packageManager.getLaunchIntentForPackage(pkg)
+            ?: return pressHome()
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            startActivity(intent)
+            settle(800)
+            mapOf("ok" to true, "package" to pkg)
+        } catch (e: Exception) {
+            pressHome()
+        }
     }
 
     /**
