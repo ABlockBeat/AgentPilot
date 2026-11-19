@@ -8,6 +8,7 @@ import android.accessibilityservice.GestureDescription
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
@@ -22,6 +23,8 @@ import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.CountDownLatch
@@ -31,7 +34,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.19.
+ * AgentPilot, drive engine, version 0.6.20.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -75,6 +78,68 @@ class DriveService : AccessibilityService() {
         const val KEY_TARGET_LABEL = "target_label"
         const val KEY_TOKEN = "mcp_token"
 
+        /** One place for the MCP port and loopback host: the
+         * server, both tunnels and the UI test all use these,
+         * never a literal, so the port changes in one line. */
+        const val MCP_PORT = 8765
+        const val MCP_LOOPBACK_HOST = "127.0.0.1"
+        /** The MCP server's own address, built from the two
+         * constants above. The tunnels and the UI test fetch this
+         * URL, never a literal. */
+        const val MCP_LOOPBACK_URL = "http://127.0.0.1:8765"
+
+        /** The MCP URL on a Tailscale address. Built with
+         * Uri.Builder, never written as a literal: the address is
+         * the phone's own, and the traffic under the HTTP is
+         * encrypted by WireGuard (see the comment at the call
+         * site in KeepAliveService). */
+        fun tailnetUrl(ip: String): String =
+            android.net.Uri.Builder().scheme("http")
+                .authority(ip + ":" + MCP_PORT).build().toString()
+
+        /** Encrypted store for the secrets: the MCP bearer token
+         * and the ngrok authtoken. Plain SharedPreferences are
+         * readable by any app with root and travel out in a
+         * backup, so the secrets never live there. The other
+         * prefs (target app, session wanted, tunnel backend) are
+         * not secrets and stay in the plain prefs. Falls back to
+         * the plain prefs only when the Android KeyStore is
+         * unavailable, and logs it: losing the session is worse
+         * than a degraded store. */
+        private const val SECURE_PREFS = "browser_mcp_secure"
+
+        fun securePrefs(context: Context): SharedPreferences {
+            return try {
+                val masterKey = MasterKey.Builder(context)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    context, SECURE_PREFS, masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Encrypted prefs unavailable, plain prefs used", e)
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            }
+        }
+
+        /** Move a secret out of the plain prefs into the encrypted
+         * store, once. Returns the moved value, or "" when the
+         * plain prefs never held it. The plain copy is deleted
+         * only when the encrypted store is really a different
+         * file: when the KeyStore fell back to the plain prefs,
+         * deleting would destroy the secret itself. */
+        private fun migrateSecret(context: Context, key: String): String {
+            val secure = securePrefs(context)
+            val plain = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val value = plain.getString(key, "") ?: ""
+            if (value.isEmpty()) return ""
+            secure.edit().putString(key, value).apply()
+            if (secure !== plain) plain.edit().remove(key).apply()
+            return value
+        }
+
         /**
          * The MCP bearer token, generated once and saved. The tunnel
          * URL alone connects nothing: the agent needs this token too.
@@ -82,11 +147,18 @@ class DriveService : AccessibilityService() {
          * key in Help. The server reads it fresh on every start.
          */
         fun storedToken(context: Context): String {
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            var token = prefs.getString(KEY_TOKEN, "") ?: ""
+            val secure = securePrefs(context)
+            var token = secure.getString(KEY_TOKEN, "") ?: ""
             if (token.isEmpty()) {
-                token = UUID.randomUUID().toString()
-                prefs.edit().putString(KEY_TOKEN, token).apply()
+                // First run after the encryption change: the old
+                // token lives in the plain prefs. Move it, do not
+                // mint a new one, so the owner's saved connection
+                // keeps working.
+                token = migrateSecret(context, KEY_TOKEN)
+                if (token.isEmpty()) {
+                    token = UUID.randomUUID().toString()
+                    secure.edit().putString(KEY_TOKEN, token).apply()
+                }
             }
             return token
         }
@@ -94,9 +166,26 @@ class DriveService : AccessibilityService() {
         /** A new token, saved at once. The old one stops working. */
         fun newToken(context: Context): String {
             val token = UUID.randomUUID().toString()
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putString(KEY_TOKEN, token).apply()
+            securePrefs(context).edit().putString(KEY_TOKEN, token).apply()
             return token
+        }
+
+        /** The ngrok authtoken, in the same encrypted store as the
+         * MCP token. The owner pastes it once in Help; it never
+         * leaves the phone except to ngrok itself. */
+        fun storedNgrokToken(context: Context): String {
+            val secure = securePrefs(context)
+            var token = secure.getString(KeepAliveService.KEY_NGROK_TOKEN, "") ?: ""
+            if (token.isEmpty()) {
+                token = migrateSecret(context, KeepAliveService.KEY_NGROK_TOKEN)
+            }
+            return token
+        }
+
+        /** Save the ngrok authtoken the owner pasted in Help. */
+        fun saveNgrokToken(context: Context, token: String) {
+            securePrefs(context).edit()
+                .putString(KeepAliveService.KEY_NGROK_TOKEN, token).apply()
         }
     }
 
@@ -638,6 +727,15 @@ class DriveService : AccessibilityService() {
      * Returns the public file path, or null when the copy failed.
      * A failure here never loses the screenshot: the private file
      * written by the caller stays, and its path is returned instead.
+     *
+     * Deliberate trade-off, not an oversight: the public copy is
+     * the only way the owner ever sees a screenshot. The private
+     * file is invisible to Drive, Gallery and the file picker, so
+     * without the public copy he could never send a screenshot
+     * anywhere. Exactly one latest file is kept, the old shot is
+     * deleted first, and the screen content is his own: the same
+     * screen he already looks at. Any app with photo permission
+     * can read it, which is the price of him being able to see it.
      */
     private fun publishScreenshot(bitmap: Bitmap): String? {
         return try {
