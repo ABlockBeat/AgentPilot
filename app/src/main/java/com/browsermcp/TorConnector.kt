@@ -8,7 +8,7 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * Tor backend, version 0.6.23.
+ * Tor backend, version 0.6.24.
  *
  * The direct connection that depends on nobody: no relay host,
  * no Cloudflare, no ngrok, no Tailscale. Orbot (Guardian
