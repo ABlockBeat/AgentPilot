@@ -13,18 +13,20 @@ import java.net.NetworkInterface
 import kotlin.concurrent.thread
 
 /**
- * Hidden TEST screen for our own connector, version 0.6.22.
+ * Hidden TEST screen for our own connector and Tor, version 0.6.23.
  *
  * Reached from a TEST row in Settings. It shows, as plain text:
  * the relay URL, the connector state (connected or not, and the
- * last error in plain words), and the phone's IPv6 addresses per
- * interface, each marked global, unique-local, link-local or
- * loopback. The IPv6 list is what tells us whether a direct
- * connection to the phone is possible one day; reading the
- * phone's own addresses is not a dependence on anyone.
+ * last error in plain words), the Tor state (Orbot installed or
+ * not, the saved .onion address, and the Tor state), and the
+ * phone's IPv6 addresses per interface, each marked global,
+ * unique-local, link-local or loopback. The IPv6 list is what
+ * tells us whether a direct connection to the phone is possible
+ * one day; reading the phone's own addresses is not a dependence
+ * on anyone.
  *
  * No virtual-display test, no Tailscale test: this screen only
- * covers our own connector.
+ * covers our own connector and Tor.
  */
 class ConnectorTestActivity : Activity() {
 
@@ -53,7 +55,7 @@ class ConnectorTestActivity : Activity() {
         outputView.text = "Running..."
         thread {
             val lines = ArrayList<String>()
-            lines.add("Own connector test (0.6.22)")
+            lines.add("Own connector + Tor test (0.6.23)")
             lines.add("")
             lines.add("Relay URL: " + DriveService.RELAY_URL)
             if (DriveService.isRelayPlaceholder()) {
@@ -63,6 +65,16 @@ class ConnectorTestActivity : Activity() {
             val error = OwnConnector.lastError
             if (error.isNotEmpty()) {
                 lines.add("Last error: " + error)
+            }
+            lines.add("")
+            lines.add("Tor (Orbot):")
+            lines.add("Orbot installed: " + if (TorConnector.isOrbotInstalled(this)) "yes" else "no (install from F-Droid)")
+            val onion = DriveService.savedOnionHostname(this)
+            lines.add("Onion address: " + if (onion.isEmpty()) "not set up yet" else DriveService.torUrl(onion))
+            lines.add("Tor state: " + TorConnector.lastState)
+            val torError = TorConnector.lastError
+            if (torError.isNotEmpty()) {
+                lines.add("Last error: " + torError)
             }
             lines.add("")
             lines.add("IPv6 addresses:")

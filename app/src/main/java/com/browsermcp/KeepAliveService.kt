@@ -21,7 +21,7 @@ import java.util.Locale
 import kotlin.concurrent.thread
 
 /**
- * AgentPilot, session owner, version 0.6.22.
+ * AgentPilot, session owner, version 0.6.23.
  *
  * This service owns the whole connection: the MCP server, the
  * tunnel, and the log of what the agent did. It is a started
@@ -91,6 +91,11 @@ class KeepAliveService : Service() {
     private val ownConnector: OwnConnector by lazy {
         OwnConnector(this) { json -> mcpServer?.handleJsonRpc(json) }
     }
+    // Tor via Orbot is a mode since 0.6.23, like Tailscale: no
+    // public tunnel, Orbot publishes the phone as a .onion
+    // address. The MCP server still binds loopback; Orbot
+    // reaches it on 127.0.0.1:8765 from the phone itself.
+    private val torConnector: TorConnector by lazy { TorConnector(this) }
     private val floatingOverlay: FloatingOverlay by lazy { FloatingOverlay(this) }
     private val actionLog = ArrayDeque<String>()
 
@@ -106,11 +111,14 @@ class KeepAliveService : Service() {
     /** Our own connector is the default since 0.6.22; Cloudflare
      * and ngrok stay as fallback. Tailscale is a third mode with
      * no public tunnel: the phone's own private-network address
-     * is the connection. */
+     * is the connection. Tor is a fourth mode, also with no
+     * public tunnel: Orbot publishes the phone as a .onion
+     * address, and that address is the connection. */
     private fun activeTunnel(): TunnelBackend =
         when (prefs.getString(KEY_TUNNEL_BACKEND, "own")) {
             "ngrok" -> ngrokManager
             "own" -> ownConnector
+            "tor" -> torConnector
             else -> tunnelManager
         }
 
@@ -233,6 +241,7 @@ class KeepAliveService : Service() {
         tunnelManager.stop()
         ngrokManager.stop()
         ownConnector.stop()
+        torConnector.stop()
         floatingOverlay.hide()
         mcpServer?.stop()
         mcpServer = null
@@ -301,6 +310,7 @@ class KeepAliveService : Service() {
         tunnelManager.stop()
         ngrokManager.stop()
         ownConnector.stop()
+        torConnector.stop()
         mcpServer?.stop()
         mcpServer = null
         sessionRunning = false
@@ -406,6 +416,7 @@ class KeepAliveService : Service() {
         tunnelManager.stop()
         ngrokManager.stop()
         ownConnector.stop()
+        torConnector.stop()
         broadcastState()
     }
 
@@ -426,7 +437,8 @@ class KeepAliveService : Service() {
     private fun plainTunnelError(msg: String): String {
         val lower = msg.lowercase()
         return when {
-            "reinstall" in lower || "key" in lower || "help" in lower || "tailscale" in lower -> msg
+            "reinstall" in lower || "key" in lower || "help" in lower || "tailscale" in lower ||
+                "orbot" in lower || "f-droid" in lower -> msg
             "cannot run program" in lower || "permission denied" in lower ->
                 "Tunnel did not start. Reinstall the app."
             "unknownhost" in lower || "unable to resolve" in lower ||

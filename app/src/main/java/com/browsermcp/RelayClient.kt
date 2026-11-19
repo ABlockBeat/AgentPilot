@@ -21,7 +21,7 @@ import javax.net.ssl.SSLSocketFactory
 import kotlin.concurrent.thread
 
 /**
- * Our own WebSocket client, version 0.6.22.
+ * Our own WebSocket client, version 0.6.23.
  *
  * Plain Java sockets only, no library, no new dependency. It dials
  * OUT to our own relay (see relay/relay.py) when the session

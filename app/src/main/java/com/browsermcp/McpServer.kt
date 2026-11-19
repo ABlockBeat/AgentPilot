@@ -13,7 +13,7 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, version 0.6.22.
+ * Built-in MCP server, streamable HTTP, version 0.6.23.
  *
  * Binds the loopback address on the MCP port by default, never
  * reachable off the phone. In Tailscale mode it binds the phone's
@@ -197,7 +197,7 @@ class McpServer(
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.22"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.23"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")

@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.22.
+ * AgentPilot, Android app, version 0.6.23.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -99,6 +99,11 @@ import org.json.JSONObject
  * - No password is ever filled by the agent. Login is always by hand.
  */
 class MainActivity : Activity() {
+
+    companion object {
+        /** Request code for the Orbot onion-service intent. */
+        private const val REQUEST_TOR_ONION = 9001
+    }
 
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
@@ -268,8 +273,63 @@ class MainActivity : Activity() {
     }
 
     private fun startMcp() {
+        // Tor needs its .onion address before the session starts:
+        // the first Start asks Orbot for it, and the session starts
+        // when Orbot answers. Later starts already have the address
+        // saved, so they go straight to the session.
+        if ((prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "own") ?: "own") == "tor" &&
+            DriveService.savedOnionHostname(this).isEmpty()
+        ) {
+            requestTorOnion()
+            return
+        }
         sendServiceAction(KeepAliveService.ACTION_START_SESSION)
         updateUi()
+    }
+
+    /** Ask Orbot for the v3 onion service, once. Orbot shows the
+     * owner a one-time Allow dialog, then returns the .onion
+     * hostname. The address is saved and the session starts. If
+     * Orbot is missing, say so in plain words instead of opening
+     * a dead intent. */
+    @Suppress("DEPRECATION")
+    private fun requestTorOnion() {
+        if (!TorConnector.isOrbotInstalled(this)) {
+            status("Install Orbot from F-Droid first, then tap Start again.")
+            return
+        }
+        val intent = Intent(TorConnector.INTENT_ACTION_REQUEST_V3_ONION_SERVICE).apply {
+            putExtra(TorConnector.EXTRA_LOCAL_PORT, DriveService.MCP_PORT)
+            putExtra(TorConnector.EXTRA_ONION_PORT, DriveService.MCP_PORT)
+            putExtra(TorConnector.EXTRA_SERVICE_NAME, TorConnector.SERVICE_NAME)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_TOR_ONION)
+        } catch (e: Exception) {
+            status("Could not open Orbot. Install Orbot from F-Droid first.")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_TOR_ONION) return
+        if (resultCode != RESULT_OK || data == null) {
+            status("Tor setup was not completed.")
+            return
+        }
+        // Orbot's v3 API returns the hostname under
+        // REQUESTED_V3_HOSTNAME; the older hidden-service API
+        // used hs_host. Read both, newest first.
+        val hostname = data.getStringExtra(TorConnector.EXTRA_REQUESTED_HOSTNAME)
+            ?: data.getStringExtra("hs_host") ?: ""
+        if (hostname.isEmpty()) {
+            status("Tor did not return an address. Try again.")
+            return
+        }
+        DriveService.saveOnionHostname(this, hostname)
+        status("Tor address saved.")
+        startMcp()
     }
 
     private fun stopMcp() {
@@ -653,7 +713,12 @@ class MainActivity : Activity() {
     private fun copyConnection() {
         val url = service()?.tunnelUrl ?: return
         val token = DriveService.storedToken(this)
-        val text = "AgentPilot\nTunnel: $url\nKey: $token"
+        val onion = DriveService.savedOnionHostname(this)
+        // The .onion address is public by design, so it rides
+        // along with the link. The key stays in Copy only: it
+        // never goes in a share.
+        val torPart = if (onion.isEmpty()) "" else "\nTor: " + DriveService.torUrl(onion)
+        val text = "AgentPilot\nTunnel: $url$torPart\nKey: $token"
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("AgentPilot connection", text))
         status("Link and key copied.")
@@ -665,7 +730,9 @@ class MainActivity : Activity() {
      * screenshots. Copy is the only way the key leaves the app. */
     private fun shareConnection() {
         val url = service()?.tunnelUrl ?: return
-        val text = "AgentPilot\nTunnel: $url"
+        val onion = DriveService.savedOnionHostname(this)
+        val torPart = if (onion.isEmpty()) "" else "\nTor: " + DriveService.torUrl(onion)
+        val text = "AgentPilot\nTunnel: $url$torPart"
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
@@ -701,13 +768,14 @@ class MainActivity : Activity() {
         startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
     }
 
-    /** Switch the tunnel service: our own connector, Cloudflare, ngrok, Tailscale, then back. The tunnel restarts on the new one. */
+    /** Switch the tunnel service: our own connector, Cloudflare, ngrok, Tailscale, Tor, then back. The tunnel restarts on the new one. */
     private fun switchTunnelBackend() {
         val current = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "own") ?: "own"
         val next = when (current) {
             "own" -> "cloudflare"
             "cloudflare" -> "ngrok"
             "ngrok" -> "tailscale"
+            "tailscale" -> "tor"
             else -> "own"
         }
         prefs.edit().putString(KeepAliveService.KEY_TUNNEL_BACKEND, next).apply()
@@ -943,11 +1011,28 @@ class MainActivity : Activity() {
             setPadding(dp(0), dp(2), dp(0), dp(10))
         }
         body.addView(tunnelLine)
+        // Tor: the .onion address, next to the tunnel link. The
+        // address is public by design, so showing it here is
+        // fine; the token never appears on this screen.
+        val onion = DriveService.savedOnionHostname(this)
+        val torLine = TextView(this).apply {
+            text = if (onion.isEmpty()) "Tor: not set up yet" else "Tor: " + DriveService.torUrl(onion)
+            textSize = 13f
+            setTextColor(getColor(R.color.secondary))
+            setPadding(dp(0), dp(2), dp(0), dp(10))
+        }
+        body.addView(torLine)
         // The tunnel service: our own connector is the default
         // since 0.6.22, Cloudflare and ngrok are the fallback.
         val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "own") ?: "own"
         body.addView(settingRow("Tunnel service: $backend", "Switch", true) {
             switchTunnelBackend()
+        })
+        // Tor setup: ask Orbot for the onion service again, for
+        // example after Orbot was reinstalled and the address was
+        // lost. Orbot shows its Allow dialog again if needed.
+        body.addView(settingRow("Set up Tor again (Orbot).", "Set up", true) {
+            requestTorOnion()
         })
         // The ngrok key: paste once, saved, never shown back.
         val hasNgrokKey = DriveService.storedNgrokToken(this).isNotEmpty()

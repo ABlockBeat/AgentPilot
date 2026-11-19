@@ -34,7 +34,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.22.
+ * AgentPilot, drive engine, version 0.6.23.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -113,6 +113,29 @@ class DriveService : AccessibilityService() {
         fun tailnetUrl(ip: String): String =
             android.net.Uri.Builder().scheme("http")
                 .authority(ip + ":" + MCP_PORT).build().toString()
+
+        /** Tor via Orbot, since 0.6.23: the phone's .onion
+         * address, saved in the plain prefs. The address is
+         * public by design, so it is not a secret and never
+         * goes in the encrypted store. The MCP bearer token
+         * still guards every request to it. */
+        const val KEY_ONION_HOSTNAME = "onion_hostname"
+
+        fun savedOnionHostname(context: Context): String =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_ONION_HOSTNAME, "") ?: ""
+
+        fun saveOnionHostname(context: Context, hostname: String) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(KEY_ONION_HOSTNAME, hostname).apply()
+        }
+
+        /** The MCP URL on the phone's .onion address. Built
+         * with Uri.Builder, never written as a literal, like
+         * tailnetUrl above. */
+        fun torUrl(hostname: String): String =
+            android.net.Uri.Builder().scheme("http")
+                .authority(hostname + ":" + MCP_PORT).build().toString()
 
         /** Encrypted store for the secrets: the MCP bearer token
          * and the ngrok authtoken. Plain SharedPreferences are
