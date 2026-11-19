@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.19.
+ * AgentPilot, Android app, version 0.6.20.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -659,11 +659,13 @@ class MainActivity : Activity() {
         status("Link and key copied.")
     }
 
-    /** Share the tunnel link and the key together, one tap. */
+    /** Share the tunnel link only, one tap. The key never goes
+     * in a share: a share sheet hands the text to another app,
+     * and the key has already leaked twice in his own
+     * screenshots. Copy is the only way the key leaves the app. */
     private fun shareConnection() {
         val url = service()?.tunnelUrl ?: return
-        val token = DriveService.storedToken(this)
-        val text = "AgentPilot\nTunnel: $url\nKey: $token"
+        val text = "AgentPilot\nTunnel: $url"
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
@@ -675,7 +677,7 @@ class MainActivity : Activity() {
     private fun testConnection() {
         thread {
             val ok = try {
-                val conn = URL("http://127.0.0.1:8765/mcp").openConnection() as HttpURLConnection
+                val conn = URL(DriveService.MCP_LOOPBACK_URL + "/mcp").openConnection() as HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
                 conn.requestMethod = "POST"
@@ -721,7 +723,7 @@ class MainActivity : Activity() {
             status("Paste the key first.")
             return
         }
-        prefs.edit().putString(KeepAliveService.KEY_NGROK_TOKEN, token).apply()
+        DriveService.saveNgrokToken(this, token)
         status("ngrok key saved.")
         val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
         if (backend == "ngrok" && sessionRunning()) {
@@ -947,7 +949,7 @@ class MainActivity : Activity() {
             switchTunnelBackend()
         })
         // The ngrok key: paste once, saved, never shown back.
-        val hasNgrokKey = !(prefs.getString(KeepAliveService.KEY_NGROK_TOKEN, "") ?: "").isEmpty()
+        val hasNgrokKey = DriveService.storedNgrokToken(this).isNotEmpty()
         val ngrokKeyInput = EditText(this).apply {
             hint = if (hasNgrokKey) "ngrok key saved, paste to replace" else "Paste ngrok key here"
             textSize = 14f
@@ -982,23 +984,21 @@ class MainActivity : Activity() {
         body.addView(settingRow("Test the connection.", "Test", running) {
             testConnection()
         })
-        // TEST: the embedded Tailscale spike. A hidden debug screen,
-        // not part of the normal settings. It starts the embedded
-        // node with a pasted key and shows its 100.x address.
-        body.addView(settingRow("TEST: Embedded Tailscale (spike).", "Open", true) {
-            startActivity(Intent(this, TailnetTestActivity::class.java))
-        })
-        // Connection key: shown in full, tap to copy, and a new key.
+        // Connection key: only the last 4 characters are ever
+        // shown, tap to copy, and a new key. The full key has
+        // already leaked twice in his own screenshots, so it is
+        // never displayed anywhere on screen again.
         body.addView(sectionHeading("Connection key"))
         val keyLabel = TextView(this).apply {
-            text = "Connection key (tap to copy):"
+            text = "Connection key, last 4 shown (tap to copy):"
             textSize = 14f
             setTextColor(getColor(R.color.secondary))
             setPadding(dp(0), dp(12), dp(0), dp(4))
         }
         body.addView(keyLabel)
         val tokenView = TextView(this).apply {
-            text = DriveService.storedToken(this@MainActivity)
+            val token = DriveService.storedToken(this@MainActivity)
+            text = "••••••••" + token.takeLast(4)
             textSize = 12f
             typeface = android.graphics.Typeface.MONOSPACE
             setTextColor(getColor(R.color.text))
