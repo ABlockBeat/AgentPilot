@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.23.
+ * AgentPilot, Android app, version 0.6.24.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -126,23 +126,6 @@ class MainActivity : Activity() {
     private var autoStartScheduled: Boolean = false
     private var receiverRegistered: Boolean = false
 
-    /**
-     * Crypto apps stay out of the picker, standing owner order.
-     * The shortlist never had them; the all-apps list keeps the
-     * same exclusion, by package and by name.
-     */
-    private val cryptoPackages = setOf(
-        "com.binance.dev",
-        "com.kubi.kucoin",
-        "com.bitget.exchange",
-        "com.okinc.okex.gp",
-        "com.gateio.gateio",
-        "com.tradingview.tradingviewapp"
-    )
-    private val cryptoLabels = listOf(
-        "binance", "kucoin", "bitget", "okx", "gate.io", "tradingview",
-        "bybit", "coinbase", "kraken"
-    )
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -471,24 +454,16 @@ class MainActivity : Activity() {
 
     // ---- Target app picker and Accessibility settings ----
 
-    private fun isCryptoApp(pkg: String, label: String): Boolean {
-        if (pkg in cryptoPackages) return true
-        val lower = label.lowercase()
-        return cryptoLabels.any { lower.contains(it) }
-    }
-
     /**
      * The owner picks ONE app your agent may drive. The picker shows
      * centered rows of 3 apps, each with its official icon and name,
      * so the list is short, balanced and there is no scrolling. A
      * short last row is centered too, never left hanging. Only the
-     * important apps are listed, Chrome first, and only those that
-     * are actually installed. No crypto apps are listed at all, by
-     * the owner's order. "Show all apps" at the end lists every
-     * launchable app instead, still without the crypto ones, so the
-     * owner can pick any other app too. If none of the five is
-     * installed, every launchable app is shown instead so the picker
-     * is never empty. Tap an app and it is picked at once, the picker
+     * apps the owner uses are listed, the exchanges, X, and Chrome
+     * as the optional browser, and only those that are actually
+     * installed. If none of them is installed, every launchable app
+     * is shown instead so the picker is never empty. Tap an app and
+     * it is picked at once, the picker
      * closes, no extra button to tap. Android 11 and newer hide most
      * installed apps from queryIntentActivities unless
      * QUERY_ALL_PACKAGES is declared in the manifest, so that
@@ -499,26 +474,32 @@ class MainActivity : Activity() {
      * the target from prefs on every action, so MCP keeps running
      * and the status line updates to the new app.
      */
-    private fun showAppPicker(showAll: Boolean = false) {
+    private fun showAppPicker() {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val installed = packageManager.queryIntentActivities(intent, 0)
             .filter { it.activityInfo.packageName != packageName }
-        val important = listOf(
-            "com.android.chrome",
-            "org.telegram.messenger",
+                // Only the apps the owner uses: the exchanges, X, and Chrome
+        // as the optional browser. No YouTube, no TikTok, no Telegram,
+        // no Instagram. Only installed ones show; if none is installed,
+        // every launchable app is shown instead so the picker is never empty.
+        val allowed = listOf(
+            "com.binance.dev",
+            "com.okinc.okx",
+            "com.okinc.okex.gp",
+            "com.bitget.exchange",
+            "com.kubi.kucoin",
+            "com.gateio.gateio",
+            "com.wake.weexprd",
             "com.twitter.android",
-            "com.instagram.android",
-            "com.zhiliaoapp.musically"
+            "com.android.chrome"
         )
-        val picked = important.mapNotNull { pkg ->
+        val picked = allowed.mapNotNull { pkg ->
             installed.firstOrNull { it.activityInfo.packageName == pkg }
         }
-        val apps = when {
-            showAll -> installed
-                .filter { !isCryptoApp(it.activityInfo.packageName, it.loadLabel(packageManager).toString()) }
-                .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
-            picked.isEmpty() -> installed.sortedBy { it.loadLabel(packageManager).toString().lowercase() }
-            else -> picked
+        val apps = if (picked.isEmpty()) {
+            installed.sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+        } else {
+            picked
         }
         lateinit var dialog: AlertDialog
         fun cellView(position: Int): LinearLayout {
@@ -569,26 +550,6 @@ class MainActivity : Activity() {
                 row.addView(cellView(position))
             }
             rows.addView(row)
-        }
-        if (!showAll) {
-            val allButton = Button(this).apply {
-                text = "Show all apps"
-                textSize = 15f
-                setBackgroundResource(R.drawable.rounded_button_outline)
-                setTextColor(getColor(R.color.accent))
-                setPadding(dp(12), dp(6), dp(12), dp(6))
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = dp(12)
-                }
-                setOnClickListener {
-                    dialog.dismiss()
-                    showAppPicker(true)
-                }
-            }
-            rows.addView(allButton)
         }
         val scroll = ScrollView(this).apply { addView(rows) }
         dialog = AlertDialog.Builder(this)
