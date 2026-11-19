@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * Built-in tunnel for AgentPilot, version 0.6.23.
+ * Built-in tunnel for AgentPilot, version 0.6.24.
  *
  * The tunnel lives inside the app. No Termux, no download, no Play
  * Store, no outside app at any point. The cloudflared binary ships
