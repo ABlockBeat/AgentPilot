@@ -13,7 +13,7 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, version 0.6.23.
+ * Built-in MCP server, streamable HTTP, version 0.6.24.
  *
  * Binds the loopback address on the MCP port by default, never
  * reachable off the phone. In Tailscale mode it binds the phone's
@@ -197,7 +197,7 @@ class McpServer(
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.23"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.24"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")
@@ -232,7 +232,7 @@ class McpServer(
         list.put(tool("drive_screenshot", "Screenshot the target app screen to a file.", JSONObject(), JSONArray()))
         list.put(tool("drive_screen_text", "Read the text on the target app screen, with tap positions.", JSONObject(), JSONArray()))
         list.put(tool("drive_open_app", "Open the picked target app.", JSONObject().put("package", str()), JSONArray().put("package")))
-        list.put(tool("drive_open_url", "Open a URL in the real browser.", JSONObject().put("url", str()), JSONArray().put("url")))
+        list.put(tool("drive_open_url", "Open a URL in the real browser, then wait until the page shows readable text (wait_seconds, default 30). Returns loaded true when text appeared, false when the page is still loading.", JSONObject().put("url", str()).put("wait_seconds", num()), JSONArray().put("url")))
         list.put(tool("drive_press_back", "Press Back.", JSONObject(), JSONArray()))
         list.put(tool("drive_press_home", "Press Home.", JSONObject(), JSONArray()))
         list.put(tool("drive_wait_for_owner", "Pause while the owner does a step by hand in the target app, for example login or OTP.", JSONObject().put("marker", str()).put("timeout_seconds", num()), JSONArray().put("marker")))
@@ -277,7 +277,7 @@ class McpServer(
             "drive_screenshot" -> mapOf("path" to service.screenshot())
             "drive_screen_text" -> service.screenText()
             "drive_open_app" -> service.openApp(args.getString("package"))
-            "drive_open_url" -> service.openUrl(args.getString("url"))
+            "drive_open_url" -> service.openUrl(args.getString("url"), args.optInt("wait_seconds", 30))
             "drive_press_back" -> service.pressBack()
             "drive_press_home" -> service.pressHome()
             "drive_wait_for_owner" -> service.waitForOwner(args.getString("marker"), args.optInt("timeout_seconds", 300))
