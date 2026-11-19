@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.21.
+ * AgentPilot, Android app, version 0.6.22.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -701,13 +701,14 @@ class MainActivity : Activity() {
         startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
     }
 
-    /** Switch the tunnel service: Cloudflare, ngrok, Tailscale, then back. The tunnel restarts on the new one. */
+    /** Switch the tunnel service: our own connector, Cloudflare, ngrok, Tailscale, then back. The tunnel restarts on the new one. */
     private fun switchTunnelBackend() {
-        val current = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
+        val current = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "own") ?: "own"
         val next = when (current) {
+            "own" -> "cloudflare"
             "cloudflare" -> "ngrok"
             "ngrok" -> "tailscale"
-            else -> "cloudflare"
+            else -> "own"
         }
         prefs.edit().putString(KeepAliveService.KEY_TUNNEL_BACKEND, next).apply()
         status("Tunnel service: $next.")
@@ -725,7 +726,7 @@ class MainActivity : Activity() {
         }
         DriveService.saveNgrokToken(this, token)
         status("ngrok key saved.")
-        val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
+        val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "own") ?: "own"
         if (backend == "ngrok" && sessionRunning()) {
             sendServiceAction(KeepAliveService.ACTION_STOP_TUNNEL)
             sendServiceAction(KeepAliveService.ACTION_START_TUNNEL)
@@ -942,9 +943,9 @@ class MainActivity : Activity() {
             setPadding(dp(0), dp(2), dp(0), dp(10))
         }
         body.addView(tunnelLine)
-        // The tunnel service: Cloudflare is free with no account,
-        // ngrok is the alternative when Cloudflare does not start.
-        val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "cloudflare") ?: "cloudflare"
+        // The tunnel service: our own connector is the default
+        // since 0.6.22, Cloudflare and ngrok are the fallback.
+        val backend = prefs.getString(KeepAliveService.KEY_TUNNEL_BACKEND, "own") ?: "own"
         body.addView(settingRow("Tunnel service: $backend", "Switch", true) {
             switchTunnelBackend()
         })
@@ -983,6 +984,12 @@ class MainActivity : Activity() {
         })
         body.addView(settingRow("Test the connection.", "Test", running) {
             testConnection()
+        })
+        // Test our own connector: relay URL, connector state, and
+        // the phone's IPv6 addresses. Always available, even with
+        // the session off.
+        body.addView(settingRow("Test the own connector.", "Test", true) {
+            startActivity(Intent(this, ConnectorTestActivity::class.java))
         })
         // Connection key: only the last 4 characters are ever
         // shown, tap to copy, and a new key. The full key has

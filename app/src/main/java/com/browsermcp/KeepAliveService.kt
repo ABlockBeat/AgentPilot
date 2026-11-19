@@ -21,7 +21,7 @@ import java.util.Locale
 import kotlin.concurrent.thread
 
 /**
- * AgentPilot, session owner, version 0.6.21.
+ * AgentPilot, session owner, version 0.6.22.
  *
  * This service owns the whole connection: the MCP server, the
  * tunnel, and the log of what the agent did. It is a started
@@ -85,6 +85,12 @@ class KeepAliveService : Service() {
     private var mcpServer: McpServer? = null
     private val tunnelManager: TunnelManager by lazy { TunnelManager(this) }
     private val ngrokManager: NgrokManager by lazy { NgrokManager(this) }
+    // Our own connector is the primary path since 0.6.22. Its
+    // dispatch calls the live server; a message arriving after
+    // the server stopped gets no reply instead of a crash.
+    private val ownConnector: OwnConnector by lazy {
+        OwnConnector(this) { json -> mcpServer?.handleJsonRpc(json) }
+    }
     private val floatingOverlay: FloatingOverlay by lazy { FloatingOverlay(this) }
     private val actionLog = ArrayDeque<String>()
 
@@ -97,11 +103,16 @@ class KeepAliveService : Service() {
     @Volatile private var lastTunnelError: String = ""
     @Volatile private var serverBindHost: String? = null
 
-    /** Cloudflare is the default; ngrok is the alternative. Tailscale
-     * is a third mode with no public tunnel: the phone's own
-     * private-network address is the connection. */
+    /** Our own connector is the default since 0.6.22; Cloudflare
+     * and ngrok stay as fallback. Tailscale is a third mode with
+     * no public tunnel: the phone's own private-network address
+     * is the connection. */
     private fun activeTunnel(): TunnelBackend =
-        if (prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "ngrok") ngrokManager else tunnelManager
+        when (prefs.getString(KEY_TUNNEL_BACKEND, "own")) {
+            "ngrok" -> ngrokManager
+            "own" -> ownConnector
+            else -> tunnelManager
+        }
 
     val tunnelRunning: Boolean get() = if (isTailscaleBackend()) sessionRunning && tailscaleIp() != null else activeTunnel().running
     val tunnelInstalling: Boolean get() = if (isTailscaleBackend()) false else activeTunnel().installing
@@ -117,7 +128,7 @@ class KeepAliveService : Service() {
 
     /** True when the owner picked Tailscale instead of a public tunnel. */
     private fun isTailscaleBackend(): Boolean =
-        prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "tailscale"
+        prefs.getString(KEY_TUNNEL_BACKEND, "own") == "tailscale"
 
     /**
      * The phone's Tailscale address, in 100.64.0.0/10, or null when
@@ -221,6 +232,7 @@ class KeepAliveService : Service() {
         mainHandler.removeCallbacks(watchdogRunnable)
         tunnelManager.stop()
         ngrokManager.stop()
+        ownConnector.stop()
         floatingOverlay.hide()
         mcpServer?.stop()
         mcpServer = null
@@ -288,6 +300,7 @@ class KeepAliveService : Service() {
         mainHandler.removeCallbacks(watchdogRunnable)
         tunnelManager.stop()
         ngrokManager.stop()
+        ownConnector.stop()
         mcpServer?.stop()
         mcpServer = null
         sessionRunning = false
@@ -359,7 +372,7 @@ class KeepAliveService : Service() {
         }
         val tunnel = activeTunnel()
         if (tunnel.running || tunnel.installing) return
-        if (prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "ngrok" &&
+        if (prefs.getString(KEY_TUNNEL_BACKEND, "own") == "ngrok" &&
             DriveService.storedNgrokToken(this).isEmpty()
         ) {
             onTunnelError("ngrok needs a key. Add it in Help.")
@@ -392,6 +405,7 @@ class KeepAliveService : Service() {
     private fun stopTunnel() {
         tunnelManager.stop()
         ngrokManager.stop()
+        ownConnector.stop()
         broadcastState()
     }
 

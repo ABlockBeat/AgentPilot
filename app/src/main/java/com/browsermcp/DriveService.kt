@@ -34,7 +34,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.21.
+ * AgentPilot, drive engine, version 0.6.22.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -87,6 +87,23 @@ class DriveService : AccessibilityService() {
          * constants above. The tunnels and the UI test fetch this
          * URL, never a literal. */
         const val MCP_LOOPBACK_URL = "http://127.0.0.1:8765"
+
+        /** Our own relay, the primary connection since 0.6.22:
+         * the phone and the cloud both dial OUT to it, and it
+         * forwards the MCP messages between them. One place for
+         * the URL, so it points at any host without touching the
+         * connector code. The placeholder host never resolves
+         * (the .invalid top-level domain is reserved for exactly
+         * that), so until a real host is set the connector
+         * reports "Relay host not set yet" instead of dialing
+         * nowhere. Production MUST be wss: over plain ws the
+         * room token in the URL travels in cleartext. */
+        const val RELAY_URL = "wss://relay.example.invalid:8766"
+        private const val RELAY_PLACEHOLDER = ".invalid"
+
+        /** True while the relay URL still holds the placeholder
+         * host, meaning no real relay has been set yet. */
+        fun isRelayPlaceholder(): Boolean = RELAY_URL.contains(RELAY_PLACEHOLDER)
 
         /** The MCP URL on a Tailscale address. Built with
          * Uri.Builder, never written as a literal: the address is

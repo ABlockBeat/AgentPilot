@@ -13,7 +13,7 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, version 0.6.21.
+ * Built-in MCP server, streamable HTTP, version 0.6.22.
  *
  * Binds the loopback address on the MCP port by default, never
  * reachable off the phone. In Tailscale mode it binds the phone's
@@ -164,6 +164,23 @@ class McpServer(
         out.flush()
     }
 
+    /**
+     * The same dispatcher, reachable from a transport other than
+     * the HTTP server. The relay path uses this: the room match
+     * IS the auth (only a client holding the token joins the
+     * room), so no HTTP bearer check runs on it. A request that
+     * is not JSON at all still gets a proper parse-error reply
+     * instead of an exception.
+     */
+    fun handleJsonRpc(bodyText: String): String {
+        return try {
+            dispatch(bodyText)
+        } catch (e: Exception) {
+            val error = JSONObject().put("code", -32700).put("message", "Parse error")
+            JSONObject().put("jsonrpc", "2.0").put("id", JSONObject.NULL).put("error", error).toString()
+        }
+    }
+
     private fun dispatch(bodyText: String): String {
         val req = JSONObject(bodyText)
         val id = if (req.has("id")) req.get("id") else JSONObject.NULL
@@ -180,7 +197,7 @@ class McpServer(
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.21"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.22"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")

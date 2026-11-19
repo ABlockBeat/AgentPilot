@@ -3,13 +3,15 @@
 package com.browsermcp
 
 /**
- * One tunnel backend, version 0.6.21.
+ * One tunnel backend, version 0.6.22.
  *
- * Cloudflare Quick Tunnel is the default: free, no account. ngrok
- * is the alternative when Cloudflare does not start on a phone:
- * free account, one authtoken pasted once in Help. Both backends
- * share this shape, so the session owner picks one and the rest of
- * the app never learns which tunnel is running.
+ * Our own connector is the default since 0.6.22: the phone and
+ * the cloud both dial out to our own relay, no outside tunnel
+ * service. Cloudflare Quick Tunnel (free, no account) and ngrok
+ * (free account, one authtoken pasted once in Help) stay as
+ * fallback. All backends share this shape, so the session owner
+ * picks one and the rest of the app never learns which
+ * connection is running.
  *
  * All callbacks run on the main thread, so the caller can touch the
  * UI in them directly.
