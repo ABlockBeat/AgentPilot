@@ -106,5 +106,5 @@ jobs:
         with:
           tag_name: v${{ steps.appversion.outputs.name }}-${{ github.run_number }}
           name: AgentPilot v${{ steps.appversion.outputs.name }} build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.23: Tor is now a tunnel service. With Orbot installed from F-Droid (free, no account), AgentPilot asks Orbot once for a v3 onion service and the phone gets a .onion address; the cloud reaches the phone through Tor, no relay host, no Cloudflare, no ngrok, no Tailscale. The .onion address shows in Settings next to the tunnel link, and in the copy and share text. The TEST screen in Settings shows the Tor state. Our own connector, Cloudflare, ngrok and Tailscale stay as the other services. The relay URL is still a placeholder until a host is set."
+          body: "AgentPilot Android app, debug APK. New in 0.6.24: opening a page now waits for readable text instead of a fixed pause, so slow pages load properly; and the app picker now lists only the apps we use, Binance, OKX, Bitget, KuCoin, Gate, WEEX, X and Chrome, so any of them can be the driven app. Tor via Orbot, our own connector, Cloudflare, ngrok and Tailscale stay as the tunnel services. The relay URL is still a placeholder until a host is set."
           files: app/build/outputs/apk/debug/app-debug.apk
