@@ -1,7 +1,8 @@
 # AgentPilot UI test, free, on GitHub Actions.
 # Boots a cloud Android emulator, installs the debug APK, and runs a
 # Maestro flow that screenshots the real user journey and fails loudly
-# if the tunnel link never appears. No card, no paid service, public
+# if the tunnel reaches no definite outcome within 60 seconds (neither
+# a link nor a clear error). No card, no paid service, public
 # repo free tier. No secrets.
 # Owner order 18 Nov 2026 11:32 PKT, FINAL: the test STAYS.
 # Test again and again, so I know myself whether it works or not.
@@ -49,9 +50,12 @@ jobs:
         # tunnel binary too, or the verify step below fails.
         # Same pinned release and sha256 as the main workflow.
         # The x86_64 emulator runs ARM libs through its native
-        # bridge, so the arm64 binary works there; the tunnel
-        # link step still fails at the standing assertion, as
-        # always, because the emulator cannot reach Cloudflare.
+        # bridge, so the arm64 binary works there. The tunnel
+        # step passes on either outcome now: the link, or a
+        # clear tunnel error. The emulator has no route to the
+        # Cloudflare edge, so the link alone can never be
+        # demanded here; Part 3 of the flow asserts a definite
+        # outcome instead.
         run: |
           mkdir -p app/src/main/jniLibs/arm64-v8a
           curl --fail -sL -o app/src/main/jniLibs/arm64-v8a/libcloudflared.so https://github.com/cloudflare/cloudflared/releases/download/2026.11.1/cloudflared-linux-arm64

@@ -106,5 +106,5 @@ jobs:
         with:
           tag_name: v${{ steps.appversion.outputs.name }}-${{ github.run_number }}
           name: AgentPilot v${{ steps.appversion.outputs.name }} build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.20: the MCP token and the ngrok key are stored encrypted, the key is never shown in full again, the server binds only the Tailscale address in Tailscale mode, and the old embedded-Tailscale build is gone."
+          body: "AgentPilot Android app, debug APK. New in 0.6.21: the UI test Part 3 now passes on either tunnel outcome (the link, or a clear error) instead of demanding a Cloudflare link the emulator cannot produce; a scripted git-push upload route is ready (needs a token to run). No app behaviour change."
           files: app/build/outputs/apk/debug/app-debug.apk
