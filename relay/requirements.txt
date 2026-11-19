@@ -1,0 +1,2 @@
+# AgentPilot relay: Python 3 standard library only, no third-party packages.
+# This file exists so Render detects a Python app; nothing to install.
