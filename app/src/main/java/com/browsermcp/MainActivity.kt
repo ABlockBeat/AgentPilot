@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.14.
+ * AgentPilot, Android app, version 0.6.19.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -88,7 +88,7 @@ import org.json.JSONObject
  * - The owner turns the service on by hand in Settings, Accessibility.
  *   He can turn it off any time. Nothing here runs without that switch.
  * - The MCP server on this phone only, with a bearer token, exposes
- *   the 12 drive tools. The token is generated once, saved, and
+ *   the 14 drive tools. The token is generated once, saved, and
  *   shown in Help with tap to copy. The owner sees everything on
  *   this screen and can take over at any time with his own hands.
  * - Setup is one-time and saved: the target pick and the Accessibility
