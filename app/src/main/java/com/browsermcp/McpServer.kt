@@ -13,7 +13,7 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, version 0.6.16.
+ * Built-in MCP server, streamable HTTP, version 0.6.19.
  *
  * Binds 127.0.0.1 port 8765 by default, never reachable off the
  * phone. In Tailscale mode it binds 0.0.0.0 instead, so the
@@ -23,7 +23,7 @@ import kotlin.concurrent.thread
  * needs Authorization: Bearer, with the token the app generated
  * once and saved. The token is shown in Help, with tap to copy,
  * and changes only when the owner taps New key there.
- * 12 tools only: the drive tools that drive the REAL apps on the phone
+ * 14 tools: the drive tools that drive the REAL apps on the phone
  * through DriveService. The in-app WebView browser and its 12 tools are
  * gone: that was an option that did not do the real work, exchanges
  * detect a WebView and block logins, so only what works stays.
@@ -178,7 +178,7 @@ class McpServer(
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.14"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.19"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")
@@ -202,7 +202,7 @@ class McpServer(
 
     private fun toolsList(): JSONArray {
         val list = JSONArray()
-        // The 12 drive tools. They drive the REAL target app on the
+        // The 14 drive tools. They drive the REAL target app on the
         // phone through the AccessibilityService. Only the one app the
         // owner picked, plus system Back and Home.
         list.put(tool("drive_tap_text", "Tap the first tappable text in the target app.", JSONObject().put("text", str()), JSONArray().put("text")))
@@ -217,6 +217,11 @@ class McpServer(
         list.put(tool("drive_press_back", "Press Back.", JSONObject(), JSONArray()))
         list.put(tool("drive_press_home", "Press Home.", JSONObject(), JSONArray()))
         list.put(tool("drive_wait_for_owner", "Pause while the owner does a step by hand in the target app, for example login or OTP.", JSONObject().put("marker", str()).put("timeout_seconds", num()), JSONArray().put("marker")))
+        list.put(tool("drive_return_to_previous", "Return the owner to the app he was using before the target app took the screen, or Home when nothing was recorded.", JSONObject(), JSONArray()))
+        val stepSchema = JSONObject().put("type", "object")
+            .put("properties", JSONObject().put("tool", str()).put("arguments", JSONObject().put("type", "object")))
+            .put("required", JSONArray().put("tool"))
+        list.put(tool("drive_batch", "Run several drive actions back to back in one burst, with no idle gaps between them. Each step is {tool, arguments}. Stops at the first failed step.", JSONObject().put("actions", JSONObject().put("type", "array").put("items", stepSchema)), JSONArray().put("actions")))
         return list
     }
 
@@ -229,6 +234,22 @@ class McpServer(
         val args = params.optJSONObject("arguments") ?: JSONObject()
         val service = drive()
         val result: Any = when (name) {
+            "drive_batch" -> runBatch(service, args)
+            else -> runTool(service, name, args)
+        }
+        val text = when (result) {
+            is Map<*, *> -> JSONObject(result as Map<String, Any>).toString()
+            else -> result.toString()
+        }
+        // No toast: the call goes in the action log instead.
+        onLog(name)
+        return JSONObject()
+            .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", text)))
+    }
+
+    /** One drive action. The batch tool runs these back to back. */
+    private fun runTool(service: DriveService, name: String, args: JSONObject): Any {
+        return when (name) {
             "drive_tap_text" -> service.tapText(args.getString("text"))
             "drive_tap_coords" -> service.tapCoords(args.optInt("x", 0), args.optInt("y", 0))
             "drive_type_text" -> service.typeText(args.getString("field"), args.getString("text"))
@@ -241,15 +262,42 @@ class McpServer(
             "drive_press_back" -> service.pressBack()
             "drive_press_home" -> service.pressHome()
             "drive_wait_for_owner" -> service.waitForOwner(args.getString("marker"), args.optInt("timeout_seconds", 300))
+            "drive_return_to_previous" -> service.returnToPrevious()
             else -> throw RuntimeException("Unknown tool: $name")
         }
-        val text = when (result) {
-            is Map<*, *> -> JSONObject(result as Map<String, Any>).toString()
-            else -> result.toString()
+    }
+
+    /**
+     * Run several drive actions in one burst, with no idle gaps
+     * between them. The batch flag on the service skips the random
+     * per-action pause and caps the settle sleeps, so a whole post
+     * lands in seconds instead of many separate foreground trips.
+     * Steps run in order and stop at the first failure: later steps
+     * usually depend on the earlier ones, so continuing after a
+     * failed step would act on the wrong screen. The flag is always
+     * reset, even when a step throws.
+     */
+    private fun runBatch(service: DriveService, args: JSONObject): Map<String, Any> {
+        val actions = args.optJSONArray("actions")
+            ?: throw RuntimeException("drive_batch needs an actions list")
+        val steps = ArrayList<Map<String, Any>>()
+        service.batchMode = true
+        try {
+            for (i in 0 until actions.length()) {
+                val step = actions.getJSONObject(i)
+                val tool = step.getString("tool")
+                val toolArgs = step.optJSONObject("arguments") ?: JSONObject()
+                try {
+                    val out = runTool(service, tool, toolArgs)
+                    steps.add(mapOf("tool" to tool, "ok" to true, "result" to out.toString()))
+                } catch (e: Exception) {
+                    steps.add(mapOf("tool" to tool, "ok" to false, "error" to (e.message ?: "step failed")))
+                    return mapOf("ok" to false, "steps" to steps, "error" to (e.message ?: "step failed"))
+                }
+            }
+        } finally {
+            service.batchMode = false
         }
-        // No toast: the call goes in the action log instead.
-        onLog(name)
-        return JSONObject()
-            .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", text)))
+        return mapOf("ok" to true, "steps" to steps)
     }
 }
