@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * Built-in tunnel for AgentPilot, version 0.6.19.
+ * Built-in tunnel for AgentPilot, version 0.6.20.
  *
  * The tunnel lives inside the app. No Termux, no download, no Play
  * Store, no outside app at any point. The cloudflared binary ships
@@ -30,12 +30,13 @@ import kotlin.concurrent.thread
  *   runnable, the only fix is reinstalling the app, and the error
  *   says so in plain words.
  * - Start: run the bundled binary with "tunnel" and the local MCP
- *   server address 127.0.0.1 port 8765. The MCP server must already
- *   be listening on 8765, so the tunnel only starts while the app
- *   is Running. The first trycloudflare.com URL in the output is
- *   the public link, shown in the app and tappable to copy.
- *   Cloudflare's own API host api.trycloudflare.com also matches
- *   that shape, so the matcher skips it: it is not a tunnel.
+ *   server address, loopback on the MCP port. The MCP server must
+ *   already be listening on that port, so the tunnel only starts
+ *   while the app is Running. The first trycloudflare.com URL in
+ *   the output is the public link, shown in the app and tappable
+ *   to copy. Cloudflare's own API host api.trycloudflare.com also
+ *   matches that shape, so the matcher skips it: it is not a
+ *   tunnel.
  * - Stay up: if the tunnel process dies while the tunnel is
  *   wanted, it restarts by itself with backoff, a few tries, and
  *   only then gives up. A network change or a doze must not leave
@@ -167,7 +168,8 @@ class TunnelManager(private val context: Context) : TunnelBackend {
         thread {
             try {
                 val proc = ProcessBuilder(
-                    binaryFile().absolutePath, "tunnel", "--url", "http://127.0.0.1:8765"
+                    binaryFile().absolutePath, "tunnel", "--url",
+                    DriveService.MCP_LOOPBACK_URL
                 ).redirectErrorStream(true).start()
                 process = proc
                 var urlSent = false
