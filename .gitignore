@@ -1,3 +1,7 @@
-# The embedded Tailscale AAR is built in CI by gomobile bind and
-# never committed (see tailnet/build-aar.sh).
+# The embedded-Tailscale AAR was dropped in v0.6.20: nothing builds
+# it anymore, and nothing in the repo references it. The tunnel
+# binaries (cloudflared, ngrok) are downloaded by CI, never committed.
 app/libs/
+# The UI test workflow downloads the arm64 cloudflared binary here;
+# it must never be committed (37 MB, downloaded fresh every run).
+app/src/main/jniLibs/
