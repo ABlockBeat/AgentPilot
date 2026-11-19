@@ -3,7 +3,7 @@
 package com.browsermcp
 
 /**
- * One tunnel backend, version 0.6.23.
+ * One tunnel backend, version 0.6.24.
  *
  * Our own connector is the default since 0.6.22: the phone and
  * the cloud both dial out to our own relay, no outside tunnel
