@@ -13,16 +13,17 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, version 0.6.19.
+ * Built-in MCP server, streamable HTTP, version 0.6.20.
  *
- * Binds 127.0.0.1 port 8765 by default, never reachable off the
- * phone. In Tailscale mode it binds 0.0.0.0 instead, so the
- * phone's private-network address can reach it; the bearer token
- * still guards every request, and Tailscale itself only admits
- * devices on the owner's own private network. Every request
- * needs Authorization: Bearer, with the token the app generated
- * once and saved. The token is shown in Help, with tap to copy,
- * and changes only when the owner taps New key there.
+ * Binds the loopback address on the MCP port by default, never
+ * reachable off the phone. In Tailscale mode it binds the phone's
+ * own Tailscale address only, never every interface, so it is not
+ * reachable from Wi-Fi or LAN; the bearer token still guards every
+ * request, and Tailscale itself only admits devices on the owner's
+ * own private network. Every request needs Authorization: Bearer,
+ * with the token the app generated once and saved. The token is
+ * shown masked in Help, with tap to copy, and changes only when
+ * the owner taps New key there.
  * 14 tools: the drive tools that drive the REAL apps on the phone
  * through DriveService. The in-app WebView browser and its 12 tools are
  * gone: that was an option that did not do the real work, exchanges
@@ -42,7 +43,7 @@ import kotlin.concurrent.thread
  */
 class McpServer(
     private val token: String,
-    private val bindAll: Boolean,
+    private val bindHost: String?,
     private val onLog: (String) -> Unit,
     private val onServerStopped: (String?) -> Unit
 ) {
@@ -61,11 +62,12 @@ class McpServer(
      */
     fun start(): Boolean {
         return try {
-            // Tailscale mode listens on every interface, so the
-            // phone's private-network address reaches it. Otherwise
-            // localhost only, never reachable off the phone.
-            val host = if (bindAll) "0.0.0.0" else "127.0.0.1"
-            socket = ServerSocket(8765, 8, InetAddress.getByName(host))
+            // Tailscale mode listens on the phone's Tailscale
+            // address only, so the tailnet reaches it and Wi-Fi
+            // and LAN never do. Otherwise localhost only, never
+            // reachable off the phone.
+            val host = bindHost ?: DriveService.MCP_LOOPBACK_HOST
+            socket = ServerSocket(DriveService.MCP_PORT, 8, InetAddress.getByName(host))
             running = true
             thread {
                 try {
@@ -178,7 +180,7 @@ class McpServer(
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.19"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.20"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")
