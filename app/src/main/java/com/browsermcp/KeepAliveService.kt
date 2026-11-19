@@ -21,7 +21,7 @@ import java.util.Locale
 import kotlin.concurrent.thread
 
 /**
- * AgentPilot, session owner, version 0.6.19.
+ * AgentPilot, session owner, version 0.6.20.
  *
  * This service owns the whole connection: the MCP server, the
  * tunnel, and the log of what the agent did. It is a started
@@ -36,8 +36,10 @@ import kotlin.concurrent.thread
  *   session, start tunnel, stop tunnel, restart the server with a
  *   new token. The service does the work and broadcasts state
  *   changes, so the Activity refreshes without polling.
- * - The MCP server binds 127.0.0.1 port 8765 with the bearer token
- *   saved in prefs. The token never changes on its own.
+ * - The MCP server binds the loopback address on the MCP port by
+ *   default, or the phone's Tailscale address in Tailscale mode,
+ *   never every interface. The bearer token is saved encrypted
+ *   and never changes on its own.
  * - The tunnel starts by itself with the session and stops with
  *   it. One tap on Start connects everything: server and tunnel
  *   together, no separate tunnel step. After the process dies and
@@ -93,7 +95,7 @@ class KeepAliveService : Service() {
     @Volatile private var lastTunnelLine: String = ""
     @Volatile private var lastTunnelRawLine: String = ""
     @Volatile private var lastTunnelError: String = ""
-    @Volatile private var serverBindAll: Boolean = false
+    @Volatile private var serverBindHost: String? = null
 
     /** Cloudflare is the default; ngrok is the alternative. Tailscale
      * is a third mode with no public tunnel: the phone's own
@@ -105,7 +107,13 @@ class KeepAliveService : Service() {
     val tunnelInstalling: Boolean get() = if (isTailscaleBackend()) false else activeTunnel().installing
     val tunnelInstalled: Boolean get() = if (isTailscaleBackend()) true else activeTunnel().installed
     val tunnelRestarting: Boolean get() = if (isTailscaleBackend()) false else activeTunnel().restarting
-    val tunnelUrl: String? get() = if (isTailscaleBackend()) tailscaleIp()?.let { "http://$it:8765" } else activeTunnel().publicUrl
+    // Cleartext HTTP on purpose, not an oversight: a Tailscale
+    // address has no certificate, so TLS cannot exist for it, and
+    // the traffic under the HTTP is already encrypted by
+    // WireGuard: only devices on the owner's own private network
+    // ever reach this address. The bearer token still guards
+    // every request, checked before any body is read.
+    val tunnelUrl: String? get() = if (isTailscaleBackend()) tailscaleIp()?.let { DriveService.tailnetUrl(it) } else activeTunnel().publicUrl
 
     /** True when the owner picked Tailscale instead of a public tunnel. */
     private fun isTailscaleBackend(): Boolean =
@@ -234,10 +242,12 @@ class KeepAliveService : Service() {
     private fun startSession() {
         if (sessionRunning) return
         val token = DriveService.storedToken(this)
-        serverBindAll = isTailscaleBackend()
+        // Tailscale mode binds the phone's own Tailscale address
+        // only; every other mode binds the loopback address.
+        serverBindHost = if (isTailscaleBackend()) tailscaleIp() else null
         val server = McpServer(
             token,
-            serverBindAll,
+            serverBindHost,
             onLog = { name -> logAction(name) },
             onServerStopped = { msg -> onServerDied(msg) }
         )
@@ -319,12 +329,13 @@ class KeepAliveService : Service() {
     private fun startTunnelFlow() {
         if (!sessionRunning) startSession()
         if (!sessionRunning) return
-        // Tailscale mode needs the server on every interface, the
-        // public tunnels need localhost only. When the backend
-        // changed under a running session, rebind the server and
-        // come back here; after the restart the bind matches, so
-        // this never loops.
-        if (isTailscaleBackend() != serverBindAll) {
+        // Tailscale mode needs the server on the phone's Tailscale
+        // address, the public tunnels need localhost only. When the
+        // backend changed under a running session, rebind the
+        // server and come back here; after the restart the bind
+        // matches, so this never loops.
+        val wantHost = if (isTailscaleBackend()) tailscaleIp() else null
+        if (wantHost != serverBindHost) {
             restartServer()
             return
         }
@@ -349,7 +360,7 @@ class KeepAliveService : Service() {
         val tunnel = activeTunnel()
         if (tunnel.running || tunnel.installing) return
         if (prefs.getString(KEY_TUNNEL_BACKEND, "cloudflare") == "ngrok" &&
-            prefs.getString(KEY_NGROK_TOKEN, "").isNullOrEmpty()
+            DriveService.storedNgrokToken(this).isEmpty()
         ) {
             onTunnelError("ngrok needs a key. Add it in Help.")
             return
