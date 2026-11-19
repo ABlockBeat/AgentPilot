@@ -164,7 +164,7 @@ class RelayClient(
     fun stop() {
         stopped = true
         try {
-            sendFrame(8, byteArrayOf(0x03, 0xE8))
+            sendFrame(8, byteArrayOf(0x03, 0xE8.toByte()))
         } catch (ignored: Exception) { }
         try {
             socket?.close()
@@ -288,7 +288,7 @@ class RelayClient(
                     10 -> { } // pong: ignore.
                     8 -> { // close: answer, then end.
                         try {
-                            sendFrame(8, byteArrayOf(0x03, 0xE8))
+                            sendFrame(8, byteArrayOf(0x03, 0xE8.toByte()))
                         } catch (ignored: Exception) { }
                         break
                     }
