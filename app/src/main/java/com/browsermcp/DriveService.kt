@@ -34,7 +34,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.23.
+ * AgentPilot, drive engine, version 0.6.24.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -436,6 +436,37 @@ class DriveService : AccessibilityService() {
         return intArrayOf(metrics.widthPixels, metrics.heightPixels)
     }
 
+        /**
+     * True when the foreground window shows any readable text.
+     * A probe for openUrl: never throws (no window yet, or a
+     * FLAG_SECURE screen, just means not loaded yet), never
+     * reads a password field's text, and never requires the
+     * target app, because the browser is not the target.
+     */
+    private fun hasVisibleText(): Boolean {
+        return try {
+            runOnMain {
+                val root = rootInActiveWindow ?: return@runOnMain false
+                var found = false
+                try {
+                    walk(root) { node ->
+                        if (!node.isVisibleToUser || isPassword(node)) return@walk false
+                        if (nodeText(node).trim().isNotEmpty()) {
+                            found = true
+                            return@walk true
+                        }
+                        false
+                    }
+                } finally {
+                    root.recycle()
+                }
+                found
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     // ---- screen ----
 
     fun screenText(): Map<String, Any> {
@@ -827,8 +858,25 @@ class DriveService : AccessibilityService() {
         return mapOf("ok" to true, "package" to packageName)
     }
 
-    fun openUrl(url: String): Map<String, Any> {
+
+        /**
+     * Open a URL in the real browser, then wait until the page
+     * shows readable text, up to waitSeconds (default 30). The
+     * old code slept a fixed 1500 ms and reported ok while a
+     * heavy page was still loading, so the next drive step acted
+     * on half a page: the desktop live test hit the same fault
+     * on 19 Nov 2026, a GitHub page needing 92 s for its scripts
+     * against a 90 s timeout. A slow page never fails the call:
+     * loaded comes back false with the wait in ms, and the
+     * caller decides whether to wait more or read the screen
+     * as it is. The 800 ms settle before probing keeps the probe
+     * from reading the old screen's text and calling a page
+     * loaded that never opened; the package check does the same
+     * when the browser was not already in front.
+     */
+    fun openUrl(url: String, waitSeconds: Int = 30): Map<String, Any> {
         pause()
+        val before = foregroundPackage()
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
@@ -836,10 +884,32 @@ class DriveService : AccessibilityService() {
         } catch (e: Exception) {
             throw RuntimeException("Cannot open URL: " + e.message)
         }
-        Thread.sleep(1500)
-        return mapOf("ok" to true, "url" to url)
+        Thread.sleep(800)
+        val waitMs = waitSeconds.coerceIn(0, 300) * 1000L
+        val start = System.currentTimeMillis()
+        var loaded = false
+        while (System.currentTimeMillis() - start < waitMs) {
+            val cur = foregroundPackage()
+            val moved = before.isEmpty() || (cur.isNotEmpty() && cur != before)
+            val settled = System.currentTimeMillis() - start > 5000
+            if (hasVisibleText() && (moved || settled)) {
+                loaded = true
+                break
+            }
+            Thread.sleep(500)
+        }
+        val waited = System.currentTimeMillis() - start
+        val out = HashMap<String, Any>()
+        out["ok"] = true
+        out["url"] = url
+        out["loaded"] = loaded
+        out["wait_ms"] = waited
+        if (!loaded) {
+            out["note"] = "Page showed no readable text within ${waitSeconds}s. " +
+                "It may still be loading; read the screen or wait and retry."
+        }
+        return out
     }
-
     fun pressBack(): Map<String, Any> {
         pause()
         if (!performGlobalAction(GLOBAL_ACTION_BACK)) {
