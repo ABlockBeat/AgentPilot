@@ -140,5 +140,5 @@ jobs:
         with:
           tag_name: v${{ steps.appversion.outputs.name }}-${{ github.run_number }}
           name: AgentPilot v${{ steps.appversion.outputs.name }} build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. Test build 0.6.17: embedded Tailscale spike, a hidden TEST screen in Settings that starts the tsnet node inside the app. Not the finished integration yet."
+          body: "AgentPilot Android app, debug APK. New in 0.6.19: when a drive session ends, the phone goes back to the app you were using; a new drive_batch tool runs a whole post in one short burst; the notification offers Back to my app."
           files: app/build/outputs/apk/debug/app-debug.apk
