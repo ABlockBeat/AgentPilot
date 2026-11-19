@@ -30,10 +30,8 @@ jobs:
           # obsolete "tools" package, which no longer exists in the SDK
           # repositories and fails the run. Install only packages that
           # exist: platform-tools, build-tools 34 and platform 34,
-          # which is what AGP 8.5.2 with compileSdk 34 needs, plus
-          # NDK r27d, which gomobile needs to bind the embedded
-          # Tailscale node into an AAR.
-          packages: platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.3.13750724
+          # which is what AGP 8.5.2 with compileSdk 34 needs.
+          packages: platform-tools build-tools;34.0.0 platforms;android-34
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -76,37 +74,6 @@ jobs:
           cp /tmp/ngrok-bin/ngrok app/src/main/jniLibs/arm64-v8a/libngrok.so
           ls -l app/src/main/jniLibs/arm64-v8a/
           file app/src/main/jniLibs/arm64-v8a/libngrok.so | grep -qi "ARM aarch64"
-      - name: Set up Go 1.27.3
-        # The embedded Tailscale node is Go, bound into an AAR.
-        # Pinned to 1.27.3: tailscale.com v1.104.4 needs exactly
-        # that (its go.mod says go 1.27.3).
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.27.3"
-          cache-dependency-path: tailnet/go.sum
-      - name: Cache Go build and gomobile work dirs
-        # Compiling tailscale + wireguard-go + gVisor takes several
-        # minutes; the build cache and the gomobile work dir make
-        # later runs fast. The module cache comes from setup-go.
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/.cache/gomobile
-          key: go-build-${{ runner.os }}-${{ hashFiles('tailnet/go.sum') }}
-          restore-keys: |
-            go-build-${{ runner.os }}-
-      - name: Build embedded Tailscale AAR
-        # The embedded Tailscale node, bound with gomobile into an
-        # AAR the app ships. Pinned toolchain: Go 1.27.3,
-        # tailscale.com v1.104.4, x/mobile 20260709, NDK r27d.
-        # The AAR is built here, never committed, and must exist
-        # before Gradle runs, or the app build fails on the missing
-        # file dependency. The script verifies the facade class and
-        # that only arm64-v8a ships.
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.3.13750724
-        run: bash tailnet/build-aar.sh
       - name: Build debug APK
         env:
           KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
@@ -121,7 +88,6 @@ jobs:
         run: |
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "37818397.*lib/arm64-v8a/libcloudflared.so"
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "lib/arm64-v8a/libngrok.so"
-          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "lib/arm64-v8a/libgojni.so"
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -140,5 +106,5 @@ jobs:
         with:
           tag_name: v${{ steps.appversion.outputs.name }}-${{ github.run_number }}
           name: AgentPilot v${{ steps.appversion.outputs.name }} build ${{ github.run_number }}
-          body: "AgentPilot Android app, debug APK. New in 0.6.19: when a drive session ends, the phone goes back to the app you were using; a new drive_batch tool runs a whole post in one short burst; the notification offers Back to my app."
+          body: "AgentPilot Android app, debug APK. New in 0.6.20: the MCP token and the ngrok key are stored encrypted, the key is never shown in full again, the server binds only the Tailscale address in Tailscale mode, and the old embedded-Tailscale build is gone."
           files: app/build/outputs/apk/debug/app-debug.apk
