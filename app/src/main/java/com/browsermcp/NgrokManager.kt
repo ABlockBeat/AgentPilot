@@ -13,7 +13,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * ngrok tunnel for AgentPilot, version 0.6.19.
+ * ngrok tunnel for AgentPilot, version 0.6.20.
  *
  * The second tunnel, for phones where Cloudflare does not start.
  * ngrok is free with an account: the owner signs up once at
@@ -25,13 +25,13 @@ import org.json.JSONObject
  *   and print "ngrok". If the file is missing or not runnable,
  *   the only fix is reinstalling the app, and the error says so.
  * - Start: run the bundled binary with "http" and the local MCP
- *   server address 127.0.0.1 port 8765. The token goes in as an
+ *   server address, loopback on the MCP port. The token goes in as an
  *   environment value, never on a command line the system could
  *   log. The MCP server must already be listening, so the tunnel
  *   only starts while the app is Running.
  * - Link: ngrok prints its public link in the log, and it also
- *   serves it on its own local API at 127.0.0.1 port 4040. The
- *   API is tried first, the log is the backup. Whichever finds
+ *   serves it on its own local API on the loopback address,
+ *   port 4040. The API is tried first, the log is the backup. Whichever finds
  *   the link first wins. If neither gives a link within 60
  *   seconds, the tunnel is stopped and the error says so plainly,
  *   instead of showing Connecting forever. The ngrok agent
@@ -63,6 +63,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
     companion object {
         private const val BINARY_NAME = "libngrok.so"
         private const val MAX_RESTARTS = 5
+        private const val NGROK_LOCAL_API_URL = "http://127.0.0.1:4040/api/tunnels"
         private val TUNNEL_URL_REGEX = Regex("https://[A-Za-z0-9-]+\\.ngrok(-free)?\\.(app|io)")
     }
 
@@ -94,8 +95,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
     private fun binaryFile(): File = File(context.applicationInfo.nativeLibraryDir, BINARY_NAME)
 
     private fun savedToken(): String =
-        context.getSharedPreferences(DriveService.PREFS, Context.MODE_PRIVATE)
-            .getString(KeepAliveService.KEY_NGROK_TOKEN, "") ?: ""
+        DriveService.storedNgrokToken(context)
 
     /**
      * Check the bundled tunnel binary. There is nothing to download:
@@ -186,7 +186,7 @@ class NgrokManager(private val context: Context) : TunnelBackend {
     /** Ask ngrok's own local API for the public URL, if it has one yet. */
     private fun fetchTunnelUrlFromApi(): String? {
         return try {
-            val conn = URL("http://127.0.0.1:4040/api/tunnels").openConnection() as HttpURLConnection
+            val conn = URL(NGROK_LOCAL_API_URL).openConnection() as HttpURLConnection
             conn.connectTimeout = 2000
             conn.readTimeout = 2000
             conn.requestMethod = "GET"
@@ -251,7 +251,8 @@ class NgrokManager(private val context: Context) : TunnelBackend {
         thread {
             try {
                 val builder = ProcessBuilder(
-                    binaryFile().absolutePath, "http", "--log=stdout", "127.0.0.1:8765"
+                    binaryFile().absolutePath, "http", "--log=stdout",
+                    DriveService.MCP_LOOPBACK_HOST + ":" + DriveService.MCP_PORT
                 )
                 builder.environment()["NGROK_AUTHTOKEN"] = savedToken()
                 builder.environment()["HOME"] = context.filesDir.absolutePath
