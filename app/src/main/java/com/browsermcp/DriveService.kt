@@ -34,7 +34,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * AgentPilot, drive engine, version 0.6.24.
+ * AgentPilot, drive engine, version 0.6.25.
  *
  * An AccessibilityService that drives the REAL apps on the phone, the
  * ones the owner already uses and is already logged into: real Chrome,
@@ -77,6 +77,13 @@ class DriveService : AccessibilityService() {
         const val KEY_TARGET_PACKAGE = "target_package"
         const val KEY_TARGET_LABEL = "target_label"
         const val KEY_TOKEN = "mcp_token"
+
+        /** The brain of AgentPilot: Muse, the only option. Stored
+         * in the plain prefs like the target pick: it is a choice,
+         * not a secret. No provider list, no key field, no model
+         * layer. */
+        const val KEY_BRAIN = "brain"
+        const val BRAIN_MUSE = "muse"
 
         /** One place for the MCP port and loopback host: the
          * server, both tunnels and the UI test all use these,
@@ -436,7 +443,7 @@ class DriveService : AccessibilityService() {
         return intArrayOf(metrics.widthPixels, metrics.heightPixels)
     }
 
-        /**
+    /**
      * True when the foreground window shows any readable text.
      * A probe for openUrl: never throws (no window yet, or a
      * FLAG_SECURE screen, just means not loaded yet), never
@@ -842,6 +849,10 @@ class DriveService : AccessibilityService() {
     // ---- open, back, home, wait ----
 
     fun openApp(packageName: String): Map<String, Any> {
+        // The scope rule is enforced here, at the MCP boundary,
+        // not only in the picker: a package outside the allowlist
+        // is refused even when the caller names it directly.
+        AllowedApps.requireAllowed(packageName)
         val target = targetPackage()
         if (target.isEmpty()) {
             throw RuntimeException("No target app picked. Pick one in the AgentPilot app first.")
@@ -858,8 +869,7 @@ class DriveService : AccessibilityService() {
         return mapOf("ok" to true, "package" to packageName)
     }
 
-
-        /**
+    /**
      * Open a URL in the real browser, then wait until the page
      * shows readable text, up to waitSeconds (default 30). The
      * old code slept a fixed 1500 ms and reported ok while a
@@ -910,6 +920,7 @@ class DriveService : AccessibilityService() {
         }
         return out
     }
+
     fun pressBack(): Map<String, Any> {
         pause()
         if (!performGlobalAction(GLOBAL_ACTION_BACK)) {
