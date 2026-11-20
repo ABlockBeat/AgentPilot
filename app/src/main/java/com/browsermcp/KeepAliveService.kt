@@ -21,7 +21,7 @@ import java.util.Locale
 import kotlin.concurrent.thread
 
 /**
- * AgentPilot, session owner, version 0.6.24.
+ * AgentPilot, session owner, version 0.6.25.
  *
  * This service owns the whole connection: the MCP server, the
  * tunnel, and the log of what the agent did. It is a started
