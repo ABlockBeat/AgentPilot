@@ -13,7 +13,7 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * Built-in MCP server, streamable HTTP, version 0.6.24.
+ * Built-in MCP server, streamable HTTP, version 0.6.25.
  *
  * Binds the loopback address on the MCP port by default, never
  * reachable off the phone. In Tailscale mode it binds the phone's
@@ -50,6 +50,16 @@ class McpServer(
 
     companion object {
         private const val MAX_BODY_BYTES = 1024 * 1024
+
+        /**
+         * When the last authorized MCP call arrived, in ms. The home
+         * screen reads it to say honestly whether Muse is connected:
+         * the server being up does not mean Muse called. Set on both
+         * transports: the HTTP path below and the relay path in
+         * handleJsonRpc.
+         */
+        @Volatile
+        var lastCallAtMs: Long = 0L
     }
 
     private var socket: ServerSocket? = null
@@ -116,6 +126,9 @@ class McpServer(
                 send(out, 401, JSONObject().put("error", "unauthorized").toString())
                 return
             }
+            // An authorized call means Muse is here: record it so
+            // the home screen can say so honestly.
+            lastCallAtMs = System.currentTimeMillis()
             if (length < 0) length = 0
             if (length > MAX_BODY_BYTES) {
                 send(out, 413, JSONObject().put("error", "request too large").toString())
@@ -173,6 +186,9 @@ class McpServer(
      * instead of an exception.
      */
     fun handleJsonRpc(bodyText: String): String {
+        // The relay path is also Muse calling: the room match IS
+        // the auth here, so record the call before dispatching.
+        lastCallAtMs = System.currentTimeMillis()
         return try {
             dispatch(bodyText)
         } catch (e: Exception) {
@@ -197,7 +213,7 @@ class McpServer(
                 "initialize" -> JSONObject()
                     .put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject().put("tools", JSONObject()))
-                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.24"))
+                    .put("serverInfo", JSONObject().put("name", "agentpilot").put("version", "0.6.25"))
                 "tools/list" -> JSONObject().put("tools", toolsList())
                 "tools/call" -> callTool(req.getJSONObject("params"))
                 else -> throw RuntimeException("Unknown method: $method")
@@ -276,7 +292,15 @@ class McpServer(
             "drive_swipe" -> service.swipe(args.optInt("x1", 0), args.optInt("y1", 0), args.optInt("x2", 0), args.optInt("y2", 0), args.optInt("duration_ms", 300))
             "drive_screenshot" -> mapOf("path" to service.screenshot())
             "drive_screen_text" -> service.screenText()
-            "drive_open_app" -> service.openApp(args.getString("package"))
+            "drive_open_app" -> {
+                // The scope rule is enforced at the dispatch too:
+                // a package outside the allowlist is refused here,
+                // before the service is touched. The rule itself
+                // lives in one place, AllowedApps.
+                val pkg = args.getString("package")
+                AllowedApps.requireAllowed(pkg)
+                service.openApp(pkg)
+            }
             "drive_open_url" -> service.openUrl(args.getString("url"), args.optInt("wait_seconds", 30))
             "drive_press_back" -> service.pressBack()
             "drive_press_home" -> service.pressHome()
