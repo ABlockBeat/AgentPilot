@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.24.
+ * AgentPilot, Android app, version 0.6.25.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -58,9 +58,9 @@ import org.json.JSONObject
  *
  * One engine only: DriveService, an AccessibilityService that drives
  * the REAL apps on the phone, the ones the owner already uses and is
- * already logged into: real Chrome, KuCoin, Bitget, any app the owner
- * picks. That is how your agent drives your browser on your phone: no
- * cloud browser, no laptop, no extension.
+ * already logged into: real Chrome, KuCoin, Bitget, only the apps in
+ * the allowlist. That is how your agent drives your browser on your
+ * phone: no cloud browser, no laptop, no extension.
  *
  * The connection lives in KeepAliveService, not in this screen.
  * The MCP server, the tunnel and the action log all belong to the
@@ -85,6 +85,9 @@ import org.json.JSONObject
  * - The owner picks ONE target app in this UI. The service drives
  *   only that package, plus system UI for Back and Home. Every other
  *   package is refused with a clear error.
+ * - The brain is Muse, the only option: one BRAIN row on the home
+ *   screen, no key, no provider list. The MUSE LINK card shows the
+ *   MCP address and the key, masked, when the session runs.
  * - The owner turns the service on by hand in Settings, Accessibility.
  *   He can turn it off any time. Nothing here runs without that switch.
  * - The MCP server on this phone only, with a bearer token, exposes
@@ -116,6 +119,13 @@ class MainActivity : Activity() {
     private lateinit var tunnelStatus: TextView
     private lateinit var helpButton: Button
     private lateinit var settingsButton: Button
+    private lateinit var brainDot: View
+    private lateinit var brainState: TextView
+    private lateinit var museLinkCard: LinearLayout
+    private lateinit var museLinkState: TextView
+    private lateinit var museLinkAddress: TextView
+    private lateinit var museLinkToken: TextView
+    private lateinit var museLinkCopy: Button
     private var updateDownloadUrl: String = ""
     private var updateVersion: String = ""
     private var downloading: Boolean = false
@@ -151,6 +161,13 @@ class MainActivity : Activity() {
         tunnelStatus = findViewById(R.id.tunnelStatus)
         helpButton = findViewById(R.id.helpButton)
         settingsButton = findViewById(R.id.settingsButton)
+        brainDot = findViewById(R.id.brainDot)
+        brainState = findViewById(R.id.brainState)
+        museLinkCard = findViewById(R.id.museLinkCard)
+        museLinkState = findViewById(R.id.museLinkState)
+        museLinkAddress = findViewById(R.id.museLinkAddress)
+        museLinkToken = findViewById(R.id.museLinkToken)
+        museLinkCopy = findViewById(R.id.museLinkCopy)
 
         actionButton.setOnClickListener { doNextStep() }
         continueButton.setOnClickListener { openTargetApp() }
@@ -160,6 +177,7 @@ class MainActivity : Activity() {
         tunnelStatus.setOnClickListener { copyTunnelUrl() }
         helpButton.setOnClickListener { showHelp() }
         settingsButton.setOnClickListener { showSettings() }
+        museLinkCopy.setOnClickListener { copyMuseLink() }
 
         updateButton.setOnClickListener {
             when {
@@ -178,6 +196,13 @@ class MainActivity : Activity() {
         // The connection key is generated once, the first time the
         // app runs, and saved. It never changes on its own.
         DriveService.storedToken(this)
+
+        // The brain is Muse, the only option: stored once in the
+        // plain prefs, so the choice is saved like the target pick.
+        // No provider list, no key field, no Test-and-save.
+        if (!prefs.contains(DriveService.KEY_BRAIN)) {
+            prefs.edit().putString(DriveService.KEY_BRAIN, DriveService.BRAIN_MUSE).apply()
+        }
 
         updateUi()
         maybeAutoStartMcp()
@@ -405,6 +430,49 @@ class MainActivity : Activity() {
             transientStatus = null
         }
         updateTunnelUi()
+        updateMuseUi()
+    }
+
+    /**
+     * BRAIN row and MUSE LINK card. The brain is Muse and nothing
+     * else: one row, no provider list, no key field. The state is
+     * honest: the server being up does not mean Muse called. "Muse
+     * connected" needs a real authorized MCP call in the last 5
+     * minutes, otherwise the card waits. The state is computed on
+     * every UI refresh (resume, session and tunnel changes), not
+     * live-polled: a call that lands while this screen is open
+     * shows at the next refresh.
+     */
+    private fun updateMuseUi() {
+        val connected = museConnected()
+        brainDot.setBackgroundResource(if (connected) R.drawable.dot_green else R.drawable.dot_amber)
+        brainState.text = if (connected) "Connected" else "Not connected"
+        val running = sessionRunning()
+        museLinkCard.visibility = if (running) View.VISIBLE else View.GONE
+        if (!running) return
+        museLinkState.text = if (connected) "Muse connected" else "Waiting for Muse"
+        museLinkState.setTextColor(getColor(if (connected) R.color.accent else R.color.secondary))
+        val url = service()?.tunnelUrl
+        museLinkAddress.text = if (url != null) "$url/mcp" else "Connecting…"
+        val token = DriveService.storedToken(this)
+        museLinkToken.text = "••••••••" + token.takeLast(4)
+    }
+
+    /** True when Muse made an authorized MCP call in the last 5 minutes. */
+    private fun museConnected(): Boolean {
+        if (!sessionRunning()) return false
+        val last = McpServer.lastCallAtMs
+        return last > 0 && System.currentTimeMillis() - last < 5 * 60 * 1000
+    }
+
+    /** Copy the MCP address and the key together, so Muse can connect. */
+    private fun copyMuseLink() {
+        val url = service()?.tunnelUrl ?: return
+        val token = DriveService.storedToken(this)
+        val text = "AgentPilot\nMuse: $url/mcp\nKey: $token"
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("AgentPilot Muse link", text))
+        status("Muse link and key copied.")
     }
 
     /** The one button does whatever the next step is. */
@@ -461,9 +529,10 @@ class MainActivity : Activity() {
      * short last row is centered too, never left hanging. Only the
      * apps the owner uses are listed, the exchanges, X, and Chrome
      * as the optional browser, and only those that are actually
-     * installed. If none of them is installed, every launchable app
-     * is shown instead so the picker is never empty. Tap an app and
-     * it is picked at once, the picker
+     * installed. If none of them is installed, the picker says so
+     * instead of listing every app, so it can never hand the MCP a
+     * package outside the scope. Tap an app and it is picked at
+     * once, the picker
      * closes, no extra button to tap. Android 11 and newer hide most
      * installed apps from queryIntentActivities unless
      * QUERY_ALL_PACKAGES is declared in the manifest, so that
@@ -478,28 +547,23 @@ class MainActivity : Activity() {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val installed = packageManager.queryIntentActivities(intent, 0)
             .filter { it.activityInfo.packageName != packageName }
-                // Only the apps the owner uses: the exchanges, X, and Chrome
+        // Only the apps the owner uses: the exchanges, X, and Chrome
         // as the optional browser. No YouTube, no TikTok, no Telegram,
-        // no Instagram. Only installed ones show; if none is installed,
-        // every launchable app is shown instead so the picker is never empty.
-        val allowed = listOf(
-            "com.binance.dev",
-            "com.okinc.okx",
-            "com.okinc.okex.gp",
-            "com.bitget.exchange",
-            "com.kubi.kucoin",
-            "com.gateio.gateio",
-            "com.wake.weexprd",
-            "com.twitter.android",
-            "com.android.chrome"
-        )
-        val picked = allowed.mapNotNull { pkg ->
+        // no Instagram. Only installed ones show, from the one shared
+        // allowlist, so the picker can never hand the MCP a package
+        // outside the scope. If none is installed, say so plainly
+        // instead of listing every app: the old all-apps fallback
+        // was the scope hole.
+        val apps = AllowedApps.PACKAGES.mapNotNull { pkg ->
             installed.firstOrNull { it.activityInfo.packageName == pkg }
         }
-        val apps = if (picked.isEmpty()) {
-            installed.sortedBy { it.loadLabel(packageManager).toString().lowercase() }
-        } else {
-            picked
+        if (apps.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("Pick an app")
+                .setMessage("No allowed app installed yet. Install one of Binance, OKX, Bitget, KuCoin, Gate, WEEX, X or Chrome.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
         }
         lateinit var dialog: AlertDialog
         fun cellView(position: Int): LinearLayout {
