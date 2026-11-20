@@ -8,7 +8,7 @@ import android.os.Looper
 import kotlin.concurrent.thread
 
 /**
- * Our own connector, version 0.6.24.
+ * Our own connector, version 0.6.25.
  *
  * The primary connection, and the only one that depends on nobody:
  * no Cloudflare, no ngrok, no Tailscale, no outside tunnel
