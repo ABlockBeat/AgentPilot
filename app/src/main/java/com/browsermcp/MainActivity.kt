@@ -880,6 +880,7 @@ class MainActivity : Activity() {
      * disabled button instead of a button that leads nowhere. The
      * tunnel, the key, and the app settings live in Settings, not
      * here: each thing in the part it belongs to.
+     */
     private fun showHelp() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
         val hasTarget = target.isNotEmpty()
