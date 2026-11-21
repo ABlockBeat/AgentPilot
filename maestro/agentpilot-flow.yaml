@@ -81,14 +81,18 @@ name: AgentPilot UI test
     timeout: 60000
 - tapOn:
     text: "^Start$"
-# UI Test #84: the tap works now (a11yOn=true from the Settings
-# check, session running=true 0.4s later), but the plain "Running"
-# assert failed. The status line reads "Chrome · Running" in one
-# TextView, and the assert runs before the UI refreshes, so wait
-# for the word to appear instead of asserting it at once.
+# UI Test #198: the wait above still failed even though logcat
+# showed "updateUi target=Chrome a11yOn=true running=true".
+# Root cause: updateUi() overwrites the status line with a
+# transient message for up to 8s (MainActivity.kt, transientStatus),
+# and each new status() call restarts that window, so "Chrome ·
+# Running" can stay covered for the whole 15s poll. The action
+# button is never overwritten by the transient logic: it reads
+# "Disconnect" exactly while running, "Start" otherwise. Wait for
+# the stable button, not the transient-covered status line.
 - extendedWaitUntil:
     visible:
-      text: ".*Running.*"
+      text: "^Disconnect$"
     timeout: 15000
 - takeScreenshot: home-running
 
