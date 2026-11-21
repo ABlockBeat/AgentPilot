@@ -3,7 +3,7 @@
 package com.browsermcp
 
 /**
- * The one shared allowlist, version 0.6.25: the only apps
+ * The one shared allowlist, version 0.6.26: the only apps
  * AgentPilot may drive. Browser + crypto exchanges + X, nothing
  * else. The picker and the MCP boundary both use this list, so
  * the scope rule lives in one place and cannot drift between
