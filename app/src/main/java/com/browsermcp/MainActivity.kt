@@ -39,7 +39,7 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 /**
- * AgentPilot, Android app, version 0.6.25.
+ * AgentPilot, Android app, version 0.6.26.
  *
  * Minimal interface, one rule only: one status line and one
  * button. Nothing else on the screen. The button always does
@@ -880,7 +880,6 @@ class MainActivity : Activity() {
      * disabled button instead of a button that leads nowhere. The
      * tunnel, the key, and the app settings live in Settings, not
      * here: each thing in the part it belongs to.
-     */
     private fun showHelp() {
         val target = prefs.getString(DriveService.KEY_TARGET_LABEL, "") ?: ""
         val hasTarget = target.isNotEmpty()
