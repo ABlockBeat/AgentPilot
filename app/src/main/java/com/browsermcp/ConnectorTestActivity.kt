@@ -13,7 +13,7 @@ import java.net.NetworkInterface
 import kotlin.concurrent.thread
 
 /**
- * Hidden TEST screen for our own connector and Tor, version 0.6.25.
+ * Hidden TEST screen for our own connector and Tor, version 0.6.26.
  *
  * Reached from a TEST row in Settings. It shows, as plain text:
  * the relay URL, the connector state (connected or not, and the
@@ -55,7 +55,7 @@ class ConnectorTestActivity : Activity() {
         outputView.text = "Running..."
         thread {
             val lines = ArrayList<String>()
-            lines.add("Own connector + Tor test (0.6.25)")
+            lines.add("Own connector + Tor test (0.6.26)")
             lines.add("")
             lines.add("Relay URL: " + DriveService.RELAY_URL)
             if (DriveService.isRelayPlaceholder()) {
