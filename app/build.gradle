@@ -11,8 +11,8 @@ android {
         applicationId = "com.browsermcp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 40
-        versionName = "0.6.25"
+        versionCode = 41
+        versionName = "0.6.26"
         // The tunnel binaries ship arm64-v8a only: every
         // Android device sold in the last five years is arm64, and
         // the owner's phone is arm64. One ABI keeps the APK small.
